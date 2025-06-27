@@ -1,10 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"os"
+
+	"github.com/huairu-tech-com/xiaozhi-gogo/cli"
 )
 
 func main() {
-	fmt.Fprintln(os.Stdout, "存在即合理")
+	os.Exit(cli.Run())
 }
