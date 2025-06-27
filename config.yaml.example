@@ -1,0 +1,6 @@
+addr: 0.0.0.0:3456
+web_ui_addr: 0.0.0.0:3457
+log:
+  level: info
+  log_path: logs/app.log
+enable_profile: false
