@@ -1,0 +1,72 @@
+{
+  "version": 2,
+  "language": "zh-CN",
+  "flash_size": 16777216,
+  "minimum_free_heap_size": 8457848,
+  "mac_address": "11:22:33:44:55:66",
+  "chip_model_name": "esp32s3",
+  "uuid": "7b94d69a-9808-4c59-9c9b-704333b38aff",
+  "application": {
+    "name": "xiaozhi",
+    "version": "1.0.1",
+    "compile_time": "Feb  1 2025T23:02:27Z",
+    "idf_version": "v5.4-dirty",
+    "elf_sha256": "c8a8ecb6d6fbcda682494d9675cd1ead240ecf38bdde75282a42365a0e396033"
+  },
+  "partition_table": [
+    {
+      "label": "nvs",
+      "type": 1,
+      "subtype": 2,
+      "address": 36864,
+      "size": 16384
+    },
+    {
+      "label": "otadata",
+      "type": 1,
+      "subtype": 0,
+      "address": 53248,
+      "size": 8192
+    },
+    {
+      "label": "phy_init",
+      "type": 1,
+      "subtype": 1,
+      "address": 61440,
+      "size": 4096
+    },
+    {
+      "label": "model",
+      "type": 1,
+      "subtype": 130,
+      "address": 65536,
+      "size": 983040
+    },
+    {
+      "label": "ota_0",
+      "type": 0,
+      "subtype": 16,
+      "address": 1048576,
+      "size": 6291456
+    },
+    {
+      "label": "ota_1",
+      "type": 0,
+      "subtype": 17,
+      "address": 7340032,
+      "size": 6291456
+    }
+  ],
+  "ota": {
+    "label": "ota_0"
+  },
+  "board": {
+    "type": "xingzhi-cube-1.54tft-wifi",
+    "name": "xingzhi-cube-1.54tft-wifi",
+    "ssid": "卧室",
+    "rssi": -55,
+    "channel": 1,
+    "ip": "192.168.1.11",
+    "mac": "11:22:33:44:55:66"
+  }
+}

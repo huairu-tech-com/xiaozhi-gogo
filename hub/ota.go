@@ -76,7 +76,7 @@ func otaHandler(h *Hub) app.HandlerFunc {
 			d   *types.Device
 		)
 		d, err = h.repo.FindDevice(where)
-		if err != nil {
+		if err != nil && !repo.IsNotExists(err) {
 			utils.InternalServerError(ctx, "Failed to find device: "+err.Error())
 			return
 		}

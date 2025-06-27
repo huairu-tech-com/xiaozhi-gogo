@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 
 ENDPOTINT="http://localhost:3456"
+MAC="00:00:00:00:00:01"
+CLIENT_ID="uuid-1234-5678-9012-3456"
+UA="xiaozhi-esp32"
+LANG="zh-CN"
+CURRENT_DIR=$(dirname "$(readlink -f "$0")")
 
 # make sure utils command exists
 if ! command -v curl &>/dev/null; then
@@ -19,7 +24,7 @@ function GET() {
 }
 
 function POST() {
-  curl -s -X POST "$ENDPOTINT/$1" -d "$2"
+  curl -s -X POST "$ENDPOTINT/$1" -d "${2}" "${@:3}"
 }
 
 # display message in GREEN color function OK() { echo -e "\033[0;32m$1\033[0m" }
@@ -51,4 +56,12 @@ function test_health() {
   fi
 }
 
+function test_ota() {
+  BLOCK "Testing OTA..."
+  deviceBody=$(cat "${CURRENT_DIR}"/example.json)
+  body=$(curl -s -XPOST "${ENDPOTINT}/xiaozhi/ota/" -d "${deviceBody}" -H "Content-Type: application/json" -H "Client-Id: ${CLIENT_ID}" -H "User-Agent: ${UA}" -H "Accept-Language: ${LANG}" \ -H "Device-Id: ${MAC}")
+  echo ${body}
+}
+
 test_health
+test_ota

@@ -38,10 +38,10 @@ type Ota struct {
 
 type Device struct {
 	// from header
-	DeviceId       string `json:"device_id" vd:"len($1) > 0"` // 设备 ID
-	ClientId       string `json:"client_id"`                  // 客户端 ID
-	UserAgent      string `json:"user_agent"`                 // 用户代理
-	AcceptLanguage string `json:"accept_language"`            // 接受语言
+	DeviceId       string `json:"device_id"`       // 设备 ID
+	ClientId       string `json:"client_id"`       // 客户端 ID
+	UserAgent      string `json:"user_agent"`      // 用户代理
+	AcceptLanguage string `json:"accept_language"` // 接受语言
 
 	// from body
 	Version       int32  `json:"version"`         // 版本号

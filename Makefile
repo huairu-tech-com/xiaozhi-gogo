@@ -15,6 +15,22 @@ build: ensure_build_dir
 	@echo "Building the project..."
 	${GO} build ${TAGS} ${GCFLAGS} ${LD_FLAGS} -o ${BUILD_DIR}/${APP} ./main.go
 
+test:
+	@echo "Running tests..."
+	@${GO} test -v ./...
+
+race:
+	@echo ""
+	@${GO} test -race -v ./...
+
+cover:
+	@echo "Running tests with coverage..."
+	@${GO} test -coverprofile=build/coverage.out ./...
+	@${GO} tool cover -html=build/coverage.out -o  build/coverage.html
+	@echo "Coverage report generated: build/coverage.html"
+	open build/coverage.html
+	
+
 cross:
 	@echo "Cross-compiling for multiple platforms..."
 	@GOOS=linux GOARCH=amd64 ${GO} build ${TAGS} ${GCFLAGS} ${LD_FLAGS} -o ${BUILD_DIR}/${APP}-linux-amd64 ./main.go

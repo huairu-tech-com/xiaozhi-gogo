@@ -21,7 +21,9 @@ type Hub struct {
 }
 
 func New() *Hub {
-	return &Hub{}
+	return &Hub{
+		repo: repo.NewInMemoryRepository(),
+	}
 }
 
 func (h *Hub) Run(ctx context.Context) error {
