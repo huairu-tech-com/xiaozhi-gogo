@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -32,22 +33,32 @@ func runServers(ctx context.Context, cfg *Config) error {
 	webUISrv := webui.New()
 	webUISrv.Hook(hertzForInternal)
 
-	rnnables := []runnable{
-		deviceHubSrv,
-		webUISrv,
-		hertzForDevice,
-		hertzForInternal,
-	}
 	errCh := make(chan error, 1)
-	for _, srv := range rnnables {
-		go func(srv runnable) {
-			if s, ok := srv.(interface{ Run(context.Context) error }); ok {
-				if err := s.Run(ctx); err != nil {
-					errCh <- err
-				}
-			}
-		}(srv)
-	}
+	go func() {
+		errCh <- deviceHubSrv.Run(ctx)
+	}()
+
+	go func() {
+		errCh <- webUISrv.Run(ctx)
+	}()
+
+	go func() {
+		hertzForDevice.SetCustomSignalWaiter(func(e chan error) error {
+			<-ctx.Done() // if someone send SIGINT or SIGTERM, this will be pass
+			return fmt.Errorf("context cancelled: %w", ctx.Err())
+		})
+
+		errCh <- hertzForDevice.Run()
+	}()
+
+	go func() {
+		hertzForInternal.SetCustomSignalWaiter(func(e chan error) error {
+			<-ctx.Done() // if someone send SIGINT or SIGTERM, this will be pass
+			return fmt.Errorf("context cancelled: %w", ctx.Err())
+		})
+
+		errCh <- hertzForInternal.Run()
+	}()
 
 	select {
 	case <-ctx.Done():

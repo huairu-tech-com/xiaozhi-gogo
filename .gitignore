@@ -1,3 +1,5 @@
 config.yaml
 logs
 build
+webui/dist
+dist

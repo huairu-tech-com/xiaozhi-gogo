@@ -10,7 +10,7 @@ import (
 func HealthCheck() app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		c.Header("Content-Type", "application/json")
-		c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+		c.JSON(http.StatusOK, map[string]string{"message": "ok"})
 	}
 }
 

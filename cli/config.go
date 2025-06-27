@@ -19,7 +19,7 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Addr:      "0.0.0.0:3456",
-		WebUIAddr: "0.0.0.0:3457",
+		WebUIAddr: "localhost:3457",
 		Log: LogConfig{
 			Level:   "info",
 			LogPath: "logs/app.log",
