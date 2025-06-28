@@ -5,82 +5,112 @@ import (
 
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/repo"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/types"
+	"github.com/rs/zerolog/log"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/hertz-contrib/websocket"
 )
 
-var sessionContextKey = struct{}{} // Unique key for storing SessionContext in context.Context
+type ClientMessageHandler func([]byte) error
 
-type sessionContext struct {
-	Hub           *Hub
-	ParentContext context.Context
-	DeviceId      string `validate:"required"`
-	SessionId     string `validate:"required"`
-	ClientId      string `validate:"required"`
-	Device        *types.Device
-}
-
-func (sc *sessionContext) IsValid() bool {
-	return validator.New().Struct(sc) == nil
-}
-
-func FromContext(ctx context.Context) *sessionContext {
-	if ctx == nil {
-		panic("context is nil")
-	}
-
-	sc, ok := ctx.Value(sessionContextKey).(*sessionContext)
-	if !ok || sc == nil {
-		panic("session context not found in context")
-	}
-
-	return sc
-}
-
-// session represents a session for a device in the hub.
 type Session struct {
-	conn   *websocket.Conn
-	ctx    context.Context
-	cancel context.CancelFunc
+	conn *websocket.Conn
+	hub  *Hub
+
+	deviceId  string `validate:"required"`
+	sessionId string `validate:"required"`
+	clientId  string `validate:"required"`
+
+	device *types.Device
+
+	deviceVersion     int32
+	deviceAudioParams HelloAudioParams
+
+	msgHandlers map[MessageType]ClientMessageHandler
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
-func NewSession(ctx context.Context, conn *websocket.Conn) *Session {
+func newSession(ctx context.Context) *Session {
 	s := &Session{
-		conn: conn,
+		msgHandlers: make(map[MessageType]ClientMessageHandler),
 	}
 
-	c := FromContext(ctx)
-	s.ctx, s.cancel = context.WithCancel(c.ParentContext)
+	s.msgHandlers[MessageTypeHello] = s.handleHello
+	s.msgHandlers[MessageTypeListenStart] = s.handleListenStart
+	s.msgHandlers[MessageTypeListenStop] = s.handleListenStop
+	s.msgHandlers[MessageTypeListenDetect] = s.handleListenDetect
+	s.msgHandlers[MessageTypeTTSStart] = s.handleTTSStart
+	s.msgHandlers[MessageTypeTTSStop] = s.handleTTSStop
+	s.msgHandlers[MessageTypeTTSSentenceStart] = s.handleTTSSentenceStart
+
+	s.ctx, s.cancel = context.WithCancel(ctx)
 
 	return s
 }
 
-func (s *Session) populate() error {
-	var err error
+func (s *Session) isValid() bool {
+	return validator.New().Struct(s) == nil
+}
 
-	c := FromContext(s.ctx)
-	c.Device, err = c.Hub.repo.FindDevice(repo.WhereCondition{})
+// load device object from repository
+func (s *Session) populateDevice() error {
+	var err error
+	s.device, err = s.hub.repo.FindDevice(repo.WhereCondition{})
 	return err
 }
 
 func (s *Session) loop() error {
-	c := FromContext(s.ctx)
+	var (
+		err      error
+		mt       int
+		rawBytes []byte
+	)
 
 	for {
-		if c.ParentContext.Err() != nil {
-			return c.ParentContext.Err()
+		if s.ctx.Err() != nil {
+			return s.ctx.Err()
 		}
 
-		mt, message, err := s.conn.ReadMessage()
+		mt, rawBytes, err = s.conn.ReadMessage()
 		if err != nil {
-			break
+			log.Error().Err(err).Msgf("Failed to read message from device %s: %v", s.deviceId, err)
+			s.cancel()
+			continue
 		}
-		err = s.conn.WriteMessage(mt, message)
+
+		if mt != websocket.TextMessage {
+			continue // Only handle text messages
+		}
+
+		var meta *MetaMessage
+		meta, err = MessageFromBytes[MetaMessage](rawBytes)
 		if err != nil {
-			break
+			log.Error().Err(err).Msgf("Failed to parse message from device %s: %v, content is %s", s.deviceId, err, string(rawBytes))
+			s.cancel()
+			continue
+		}
+
+		handler, ok := s.msgHandlers[meta.MessageType()]
+		if !ok {
+			log.Error().Msgf("No handler found for message type %s from device %s", meta.Type, s.deviceId)
+			s.cancel()
+			continue
+		}
+
+		if err = handler(rawBytes); err != nil {
+			log.Error().Err(err).Msgf("Failed to handle message type %s from device %s: %v", meta.Type, s.deviceId, err)
+			s.cancel()
+			continue
 		}
 	}
+}
 
-	return nil
+func (s *Session) close() {
+	if s.cancel != nil && s.ctx.Err() != nil {
+		s.cancel()
+	}
+	if s.conn != nil {
+		s.conn.Close()
+	}
 }

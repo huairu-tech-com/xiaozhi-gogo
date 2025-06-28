@@ -28,6 +28,13 @@ const (
 	AudioModeRealtime AudioMode = "realtime"
 )
 
+type TransportType string
+
+const (
+	TransportTypeWebsocket TransportType = "websocket"
+	TransportTypeMQTT      TransportType = "mqtt"
+)
+
 type MetaMessage struct {
 	Type  string `json:"type"`
 	State string `json:"state"`
@@ -87,18 +94,26 @@ func MessageFromBytes[T any](raw []byte) (*T, error) {
 	return &msg, nil
 }
 
+type HelloAudioParams struct {
+	SampleRate    int32  `json:"sample_rate"`    // 采样率
+	Format        string `json:"format"`         // 音频格式
+	Channels      int32  `json:"channels"`       // 声道数
+	FrameDuration int32  `json:"frame_duration"` // 帧时长，单位为毫秒
+}
+
 // Hello
 type Hello struct {
 	MetaMessage
 
-	Version     int32  `json:"version"`   // 版本号
-	Transport   string `json:"transport"` // 传输方式
-	AudioParams struct {
-		Format        string `json:"format"`         // 音频格式
-		SampleRate    int32  `json:"sample_rate"`    // 采样率
-		Channels      int32  `json:"channels"`       // 声道数
-		FrameDuration int32  `json:"frame_duration"` // 帧时长，单位为毫秒
-	} `json:"audio_params"` // 音频参数
+	Version     int32            `json:"version"`      // 版本号
+	Transport   TransportType    `json:"transport"`    // 传输方式
+	AudioParams HelloAudioParams `json:"audio_params"` // 音频参数
+}
+
+type HelloResponse struct {
+	Type        MessageType      `json:"type"`         // 消息类型
+	Transport   TransportType    `json:"transport"`    // 传输方式
+	AudioParams HelloAudioParams `json:"audio_params"` // 音频参数
 }
 
 // 开始监听

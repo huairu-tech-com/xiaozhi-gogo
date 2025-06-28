@@ -25,33 +25,33 @@ func wsHandler(h *Hub) app.HandlerFunc {
 
 func wsProtocolHandler(ctx context.Context, rctx *app.RequestContext, h *Hub) websocket.HertzHandler {
 	return func(conn *websocket.Conn) {
+		s := newSession(ctx)
 		defer func() {
 			h.sessionMap.Del(rctx.Request.Header.Get("Device-Id"))
 			conn.Close()
+			s.close()
 		}()
 
-		sc := &sessionContext{
-			ParentContext: ctx,
-			DeviceId:      rctx.Request.Header.Get("Device-Id"),
-			ClientId:      rctx.Request.Header.Get("Client-Id"),
-			SessionId:     rctx.Request.Header.Get("Session-Id"),
+		s.hub = h
+		s.conn = conn
+		s.deviceId = rctx.Request.Header.Get("Device-Id")
+		s.clientId = rctx.Request.Header.Get("Client-Id")
+		s.sessionId = rctx.Request.Header.Get("Session-Id")
+
+		if !s.isValid() {
+			log.Error().Msgf("Invalid session parameters: DeviceId=%s, ClientId=%s, SessionId=%s",
+				s.deviceId, s.clientId, s.sessionId)
+			return
 		}
 
-		if sc.IsValid() {
-		}
-
-		valueCtx := context.WithValue(ctx, sessionContextKey, sc)
-		s := NewSession(valueCtx, conn)
-		if err := s.populate(); err != nil {
+		if err := s.populateDevice(); err != nil {
 			log.Error().Err(err).Msgf("Failed to populate session context err: %+v", err)
-			goto end
+			return
 		}
 		h.sessionMap.Set(rctx.Request.Header.Get("Device-Id"), s)
 
 		if err := s.loop(); err != nil {
 			log.Error().Err(err).Msgf("Session loop error: %+v", err)
 		}
-
-	end:
 	}
 }
