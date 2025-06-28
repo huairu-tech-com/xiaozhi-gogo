@@ -48,7 +48,7 @@ func (r *InMemoryRepository) CreateDevice(device *types.Device) error {
 func (r *InMemoryRepository) ListDevices(where WhereCondition) ([]*types.Device, error) {
 	devices := make([]*types.Device, 0)
 
-	r.devices.Range(func(key, value interface{}) bool {
+	r.devices.Range(func(key, value any) bool {
 		dev, ok := value.(*types.Device)
 		if !ok {
 			return false // Skip if the value is not a Device

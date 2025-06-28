@@ -94,19 +94,19 @@ func otaHandler(h *Hub) app.HandlerFunc {
 
 		var response OtaResponse
 		response.Websocket = Websocket{
-			URL:   h.websocketUrl,
-			Token: h.websocketToken,
+			URL:   h.cfgOta.WsEndpoint,
+			Token: h.cfgOta.WsToken,
 		}
 		response.ServerTime = ServerTime{
 			Timestamp:      time.Now().Unix(),
-			Timezone:       h.timezone,
-			TimezoneOffset: h.timezoneOffset,
+			Timezone:       h.cfgOta.Timezone,
+			TimezoneOffset: h.cfgOta.TimezoneOffset,
 		}
 
 		// TODO should dynamically calculate the firmware version and URL
 		response.Firmware = Firmware{
-			Version: h.firmwareVersion,
-			Url:     h.firmwareUrl,
+			Version: h.cfgOta.FirmwareVersion,
+			Url:     h.cfgOta.FirmwareUrl,
 		}
 
 		ctx.Header("Content-Type", "application/json")

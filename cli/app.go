@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/huairu-tech-com/xiaozhi-gogo/config"
 	"github.com/huairu-tech-com/xiaozhi-gogo/hub"
 	"github.com/huairu-tech-com/xiaozhi-gogo/webui"
 
@@ -16,7 +17,7 @@ import (
 type runnable any
 type shutdownable any
 
-func runServers(ctx context.Context, cfg *Config) error {
+func runServers(ctx context.Context, cfg *config.Config) error {
 	log.Info().Msgf("准备启动 WS 服务 %s", cfg.Addr)
 	log.Info().Msgf("准备启动 WebUI 服务 %s", cfg.WebUIAddr)
 	log.Info().Msg("准备启动 OTA 服务")
@@ -24,7 +25,7 @@ func runServers(ctx context.Context, cfg *Config) error {
 	hertzForDevice := server.Default(
 		server.WithHostPorts(cfg.Addr),
 	)
-	deviceHubSrv := hub.New()
+	deviceHubSrv := hub.New(cfg.Ota)
 	deviceHubSrv.Hook(hertzForDevice)
 
 	hertzForInternal := server.Default(

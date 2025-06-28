@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/huairu-tech-com/xiaozhi-gogo/config"
+
 	"github.com/go-yaml/yaml"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -31,7 +33,7 @@ func Run() int {
 	if *dump {
 		enc := yaml.NewEncoder(os.Stdout)
 		defer enc.Close()
-		enc.Encode(DefaultConfig())
+		enc.Encode(config.DefaultConfig())
 
 		return ExitCodeOK
 	}
@@ -46,18 +48,18 @@ func Run() int {
 		fmt.Fprintf(os.Stderr, "打开配置文件失败: %v", err)
 	}
 
-	config := DefaultConfig()
-	if err := yaml.NewDecoder(configFile).Decode(config); err != nil {
+	cfg := config.DefaultConfig()
+	if err := yaml.NewDecoder(configFile).Decode(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "解析配置文件失败: %v", err)
 		return ExitCodeFail
 	}
 
 	fmt.Println(strings.Repeat("=", 50))
 	fmt.Fprintf(os.Stdout, "配置文件已加载: %s\n", *configPath)
-	fmt.Fprintf(os.Stdout, "当前有效配置: %+v\n", config)
+	fmt.Fprintf(os.Stdout, "当前有效配置: %+v\n", cfg)
 	fmt.Println(strings.Repeat("=", 50))
 
-	if err := setupLogger(&config.Log); err != nil {
+	if err := setupLogger(cfg.Log); err != nil {
 		fmt.Fprintf(os.Stderr, "日志初始化失败: %v", err)
 		return ExitCodeFail
 	}
@@ -66,7 +68,7 @@ func Run() int {
 		syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()
 
-	if err := runServers(ctx, config); err != nil {
+	if err := runServers(ctx, cfg); err != nil {
 		log.Error().Err(err).Msg("服务器运行失败")
 		return ExitCodeFail
 	}
@@ -74,7 +76,7 @@ func Run() int {
 	return ExitCodeOK
 }
 
-func setupLogger(logCfg *LogConfig) error {
+func setupLogger(logCfg *config.LogConfig) error {
 	loglevel := zerolog.InfoLevel
 	switch strings.ToLower(logCfg.Level) {
 	case "debug":
