@@ -3,6 +3,7 @@ module github.com/huairu-tech-com/xiaozhi-gogo
 go 1.24.4
 
 require (
+	github.com/bytedance/sonic v1.13.2
 	github.com/cloudwego/hertz v0.10.0
 	github.com/cornelk/hashmap v1.0.8
 	github.com/go-playground/validator/v10 v10.26.0
@@ -11,12 +12,12 @@ require (
 	github.com/hertz-contrib/websocket v0.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.34.0
+	github.com/samber/lo v1.51.0
 	github.com/stretchr/testify v1.9.0
 )
 
 require (
 	github.com/bytedance/gopkg v0.1.1 // indirect
-	github.com/bytedance/sonic v1.13.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/cloudwego/gopkg v0.1.4 // indirect

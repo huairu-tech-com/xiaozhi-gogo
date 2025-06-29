@@ -36,10 +36,26 @@ func wsProtocolHandler(ctx context.Context, rctx *app.RequestContext, h *Hub) we
 		s.conn = conn
 		s.deviceId = rctx.Request.Header.Get("Device-Id")
 		s.clientId = rctx.Request.Header.Get("Client-Id")
-		s.sessionId = rctx.Request.Header.Get("Session-Id")
+		s.protocolVersion = rctx.Request.Header.Get("Protocol-Version")
+		authorization := rctx.Request.Header.Get("Authorization")
+		if authorization != "" && len(authorization) > 7 {
+			s.bearerToken = authorization[7:]
+		}
 
 		if !s.isValid() {
 			log.Error().Msgf("Invalid session parameters: DeviceId=%s, ClientId=%s, SessionId=%s",
+				s.deviceId, s.clientId, s.sessionId)
+			return
+		}
+
+		if !s.isAuthenticated() {
+			log.Error().Msgf("Session not authenticated: DeviceId=%s, ClientId=%s, SessionId=%s",
+				s.deviceId, s.clientId, s.sessionId)
+			return
+		}
+
+		if !s.isAuthorized() {
+			log.Error().Msgf("Session not authorized: DeviceId=%s, ClientId=%s, SessionId=%s",
 				s.deviceId, s.clientId, s.sessionId)
 			return
 		}

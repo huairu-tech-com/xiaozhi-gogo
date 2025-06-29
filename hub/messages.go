@@ -7,6 +7,8 @@ import (
 type MessageType string
 
 const (
+	MessageTypeNone             MessageType = "none"
+	MessageTypeRawAudio         MessageType = "raw_audio"
 	MessageTypeHello            MessageType = "hello"
 	MessageTypeListenStart      MessageType = "listen_start"
 	MessageTypeListenStop       MessageType = "listen_stop"
@@ -23,6 +25,7 @@ const (
 type AudioMode string
 
 const (
+	AudioModeNone     AudioMode = "none"
 	AudioModeAuto     AudioMode = "auto"
 	AudioModeManual   AudioMode = "manual"
 	AudioModeRealtime AudioMode = "realtime"
@@ -105,13 +108,17 @@ type HelloAudioParams struct {
 type Hello struct {
 	MetaMessage
 
-	Version     int32            `json:"version"`      // 版本号
-	Transport   TransportType    `json:"transport"`    // 传输方式
+	Version   int32         `json:"version"`   // 版本号
+	Transport TransportType `json:"transport"` // 传输方式
+	Features  struct {
+		MCP bool `json:"mcp"`
+	} `json:"features,omitempty"` // 特性
 	AudioParams HelloAudioParams `json:"audio_params"` // 音频参数
 }
 
 type HelloResponse struct {
 	Type        MessageType      `json:"type"`         // 消息类型
+	SessionId   string           `json:"session_id"`   // 会话ID
 	Transport   TransportType    `json:"transport"`    // 传输方式
 	AudioParams HelloAudioParams `json:"audio_params"` // 音频参数
 }
@@ -119,7 +126,8 @@ type HelloResponse struct {
 // 开始监听
 type ListenStart struct {
 	MetaMessage
-	Text string `json:"text"` // 唤醒词文本
+	SessionId string    `json:"session_id"` // 会话ID
+	Mode      AudioMode `json:"mode"`       // 音频模式
 }
 
 // 停止监听
@@ -128,6 +136,10 @@ type ListenStop struct {
 
 // 唤醒词检测
 type ListenDetect struct {
+	MetaMessage
+
+	SessionId string `json:"session_id"` // 会话ID
+	Text      string `json:"text"`       // 检测到的唤醒词文本
 }
 
 // TTS开始
@@ -153,6 +165,7 @@ type TTSentenceStart struct {
 
 type Abort struct {
 	MessageType
+
 	SessionId string `json:"session_id"` // 会话ID
 	Reason    string `json:"reason"`     // 终止原因
 }
