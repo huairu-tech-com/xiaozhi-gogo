@@ -1,6 +1,9 @@
 package hub
 
 import (
+	"encoding/binary"
+	"fmt"
+
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
 	"github.com/hertz-contrib/websocket"
@@ -53,8 +56,7 @@ func (s *Session) handleListenStart(raw []byte) error {
 	if !s.isSessionIdMatch(msg.SessionId) {
 		return ErrSessionIdMismatch
 	}
-	s.deviceAudioMode = msg.Mode
-	if err := s.buildState(); err != nil {
+	if err := s.buildState(msg.Mode); err != nil {
 		return err
 	}
 
@@ -80,19 +82,23 @@ func (s *Session) handleListenDetect(raw []byte) error {
 	return nil
 }
 
-func (s *Session) handleTTSStart(raw []byte) error {
-	return nil
-}
-
-func (s *Session) handleTTSStop(raw []byte) error {
-	return nil
-}
-
-func (s *Session) handleTTSSentenceStart(raw []byte) error {
-	return nil
-}
-
 func (s *Session) handleAudio(opusData []byte) error {
+	var bp3 BinaryProtocol3
+	if len(opusData) < (1 + 1 + 2) {
+		return errors.New("opus data too short")
+	}
+
+	bp3.Type = uint8(opusData[0])
+	bp3.Reserved = uint8(opusData[1])
+	bp3.PayloadSize = uint16(binary.BigEndian.Uint16(opusData[2:4]))
+
+	fmt.Printf("BinaryProtocol3 Type: %d, Reserved: %d, PayloadSize: %d\n", bp3.Type, bp3.Reserved, bp3.PayloadSize)
+
+	if len(opusData) < int(bp3.PayloadSize+4) {
+		return errors.Errorf("opus data too short, expected %d bytes, got %d bytes", bp3.PayloadSize+4, len(opusData))
+	}
+	bp3.Payload = opusData[4 : 4+bp3.PayloadSize]
+
 	return nil
 }
 

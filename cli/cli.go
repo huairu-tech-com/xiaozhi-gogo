@@ -23,8 +23,8 @@ const (
 )
 
 var (
-	configPath = flag.String("config-path", "config.yaml", "配置文件所在路径")
-	dump       = flag.Bool("dump", false, "生成配置文件模板，默认不生成")
+	configPath = flag.String("config-path", "config.yaml", "where config file is located, default is config.yaml")
+	dump       = flag.Bool("dump", false, "output default config and exit, useful for generating a new config file")
 )
 
 func Run() int {
@@ -39,28 +39,28 @@ func Run() int {
 	}
 
 	if _, err := os.Stat(*configPath); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "指定的配置文件%s不存在", *configPath)
+		fmt.Fprintf(os.Stderr, "config path %s does not exists", *configPath)
 		return ExitCodeFail
 	}
 
 	configFile, err := os.Open(*configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "打开配置文件失败: %v", err)
+		fmt.Fprintf(os.Stderr, "open config file failed with errro %v", err)
 	}
 
 	cfg := config.DefaultConfig()
 	if err := yaml.NewDecoder(configFile).Decode(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "解析配置文件失败: %v", err)
+		fmt.Fprintf(os.Stderr, "decode config file failed with error %v", err)
 		return ExitCodeFail
 	}
 
 	fmt.Println(strings.Repeat("=", 50))
-	fmt.Fprintf(os.Stdout, "配置文件已加载: %s\n", *configPath)
-	fmt.Fprintf(os.Stdout, "当前有效配置: %+v\n", cfg)
+	fmt.Fprintf(os.Stdout, "config file loaded %s\n", *configPath)
+	fmt.Fprintf(os.Stdout, "%+v\n", cfg)
 	fmt.Println(strings.Repeat("=", 50))
 
+	fmt.Fprintf(os.Stderr, "log setup failed %v", err)
 	if err := setupLogger(cfg.Log); err != nil {
-		fmt.Fprintf(os.Stderr, "日志初始化失败: %v", err)
 		return ExitCodeFail
 	}
 
@@ -69,7 +69,7 @@ func Run() int {
 	defer stop()
 
 	if err := runServers(ctx, cfg); err != nil {
-		log.Error().Err(err).Msg("服务器运行失败")
+		log.Error().Err(err).Msg("run server failed")
 		return ExitCodeFail
 	}
 
@@ -102,7 +102,7 @@ func setupLogger(logCfg *config.LogConfig) error {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	logFile, err := os.OpenFile(logCfg.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "打开日志文件失败: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to open log file %v", err)
 		return err
 	}
 	log.Logger = zerolog.New(io.MultiWriter(os.Stdout, logFile)).With().Logger()

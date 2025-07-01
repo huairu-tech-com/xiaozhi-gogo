@@ -2,6 +2,7 @@ package webui
 
 import (
 	"context"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 
@@ -16,6 +17,7 @@ func New() *WebUI {
 }
 
 func (w *WebUI) Run(ctx context.Context) error {
+	time.Sleep(100000 * time.Second) // Simulate long-running process
 	return nil
 }
 

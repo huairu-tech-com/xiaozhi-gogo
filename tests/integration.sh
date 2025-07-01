@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-ENDPOTINT="http://localhost:3456"
+ENDPOTINT="http://localhost:3457"
 MAC="00:00:00:00:00:01"
 CLIENT_ID="uuid-1234-5678-9012-3456"
 UA="xiaozhi-esp32"

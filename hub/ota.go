@@ -2,11 +2,14 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"time"
 
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/repo"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/types"
 	"github.com/huairu-tech-com/xiaozhi-gogo/utils"
+	"github.com/rs/zerolog/log"
 
 	"github.com/cloudwego/hertz/pkg/app"
 )
@@ -18,6 +21,10 @@ const (
 	UserAgentHeader      = "User-Agent"      // Header key for User-Agent
 )
 
+const (
+	WebSocketProtocolVersion = 3
+)
+
 type MQTT struct {
 	Endpoint     string `json:"endpoint"`
 	ClientId     string `json:"client_id"`
@@ -27,8 +34,9 @@ type MQTT struct {
 }
 
 type Websocket struct {
-	URL   string `json:"url"`
-	Token string `json:"token"`
+	URL    string `json:"url"`
+	Token  string `json:"token"`
+	Verson int32  `json:"version"` // Version of the WebSocket protocol
 }
 
 type ServerTime struct {
@@ -62,6 +70,9 @@ func otaHandler(h *Hub) app.HandlerFunc {
 		device.AcceptLanguage = ctx.Request.Header.Get("Accept-Language")
 		device.UserAgent = ctx.Request.Header.Get("User-Agent")
 
+		log.Debug().Str("device_id", device.DeviceId).Str("client_id", device.ClientId).Str("user_agent",
+			device.UserAgent).Str("accept_language", device.AcceptLanguage).Msg("OTA Request")
+
 		if err := ctx.Validate(&device); err != nil {
 			utils.BadRequest(ctx, "Validation failed: "+err.Error())
 			return
@@ -94,8 +105,9 @@ func otaHandler(h *Hub) app.HandlerFunc {
 
 		var response OtaResponse
 		response.Websocket = Websocket{
-			URL:   h.cfgOta.WsEndpoint,
-			Token: h.cfgOta.WsToken,
+			URL:    h.cfgOta.WsEndpoint,
+			Token:  h.cfgOta.WsToken,
+			Verson: WebSocketProtocolVersion,
 		}
 		response.ServerTime = ServerTime{
 			Timestamp:      time.Now().Unix(),
@@ -110,6 +122,8 @@ func otaHandler(h *Hub) app.HandlerFunc {
 		}
 
 		ctx.Header("Content-Type", "application/json")
+
+		json.NewEncoder(os.Stdout).Encode(response)
 		ctx.JSON(200, response)
 	}
 }

@@ -16,7 +16,6 @@ const (
 )
 
 type TransitionCallback func(s *Session, from SessionStateKind, to SessionStateKind) error
-type KindPair [2]SessionStateKind
 
 type SessionState struct {
 	s    *Session         // session is used to access session properties
@@ -24,7 +23,9 @@ type SessionState struct {
 
 	// the following transitions are valid for this state
 	ValidTransitions map[SessionStateKind][]SessionStateKind
-	Callbacks        map[KindPair][]TransitionCallback // callbacks for transitions, key is [from, to] pair
+	OnEnterCallbacks map[SessionStateKind][]TransitionCallback // callbacks for transitions, key is from state
+	OnExitCallbacks  map[SessionStateKind][]TransitionCallback // callbacks for transitions, key is to state
+
 }
 
 func newSessionState(s *Session, kind SessionStateKind) *SessionState {
@@ -32,7 +33,8 @@ func newSessionState(s *Session, kind SessionStateKind) *SessionState {
 		s:                s,
 		kind:             kind,
 		ValidTransitions: make(map[SessionStateKind][]SessionStateKind),
-		Callbacks:        make(map[KindPair][]TransitionCallback),
+		OnEnterCallbacks: make(map[SessionStateKind][]TransitionCallback),
+		OnExitCallbacks:  make(map[SessionStateKind][]TransitionCallback),
 	}
 }
 
@@ -50,16 +52,26 @@ func (s *SessionState) TransitTo(newState SessionStateKind) error {
 		return errors.Errorf("invalid transition from %s to %s", s.kind, newState)
 	}
 
-	s.kind = newState
-	callbacks, ok := s.Callbacks[KindPair{s.kind, newState}]
+	var err error
+	callbacks, ok := s.OnEnterCallbacks[s.kind]
 	if !ok {
 		return nil
 	}
 
-	var err error
 	for _, callback := range callbacks {
 		callbackErr := callback(s.s, s.kind, newState)
 		err = errors.Wrapf(callbackErr, "callback for transition from %s to %s failed", s.kind, newState)
+	}
+	if err != nil {
+		return err
+	}
+
+	s.kind = newState
+
+	callbacks, ok = s.OnExitCallbacks[newState]
+	for _, callback := range callbacks {
+		callbackErr := callback(s.s, s.kind, newState)
+		err = errors.Wrapf(callbackErr, "callback for transition to %s failed", newState)
 	}
 
 	return err

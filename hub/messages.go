@@ -38,6 +38,22 @@ const (
 	TransportTypeMQTT      TransportType = "mqtt"
 )
 
+type BinaryProtocol2 struct {
+	Version     uint16 `json:"version"`      // 协议版本
+	Type        uint16 `json:"type"`         // 消息类型
+	Reserved    uint32 `json:"reserved"`     // 保留字段
+	Timestamp   uint32 `json:"timestamp"`    // 时间戳，单位为毫秒
+	PayloadSize uint32 `json:"payload_size"` // 有效载荷大小
+	Payload     []byte `json:"payload"`      // 有效载荷
+}
+
+type BinaryProtocol3 struct {
+	Type        uint8  `json:"type"`         // 消息类型
+	Reserved    uint8  `json:"reserved"`     // 保留字段
+	PayloadSize uint16 `json:"payload_size"` // 有效载荷大小
+	Payload     []byte `json:"payload"`      // 有效载荷
+}
+
 type MetaMessage struct {
 	Type  string `json:"type"`
 	State string `json:"state"`

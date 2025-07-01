@@ -2,13 +2,13 @@ package hub
 
 import (
 	"context"
+	"strings"
 
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/repo"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/types"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/hertz-contrib/websocket"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
 
@@ -43,20 +43,16 @@ type Session struct {
 
 func newSession(ctx context.Context) *Session {
 	s := &Session{
-		msgHandlers:     make(map[MessageType]ClientMessageHandler),
-		deviceAudioMode: AudioModeNone,
+		msgHandlers: make(map[MessageType]ClientMessageHandler),
 	}
 
-	s.buildState()
+	s.buildState(AudioModeNone)
 
 	s.msgHandlers[MessageTypeRawAudio] = s.handleAudio
 	s.msgHandlers[MessageTypeHello] = s.handleHello
 	s.msgHandlers[MessageTypeListenStart] = s.handleListenStart
 	s.msgHandlers[MessageTypeListenStop] = s.handleListenStop
 	s.msgHandlers[MessageTypeListenDetect] = s.handleListenDetect
-	s.msgHandlers[MessageTypeTTSStart] = s.handleTTSStart
-	s.msgHandlers[MessageTypeTTSStop] = s.handleTTSStop
-	s.msgHandlers[MessageTypeTTSSentenceStart] = s.handleTTSSentenceStart
 
 	s.ctx, s.cancel = context.WithCancel(ctx)
 
@@ -70,7 +66,9 @@ func (s *Session) isValid() bool {
 // load device object from repository
 func (s *Session) populateDevice() error {
 	var err error
-	s.device, err = s.hub.repo.FindDevice(repo.WhereCondition{})
+	s.device, err = s.hub.repo.FindDevice(repo.WhereCondition{
+		"device_id": s.deviceId,
+	})
 	return err
 }
 
@@ -95,6 +93,8 @@ func (s *Session) loop() error {
 
 		var messagePayloadType MessageType = MessageTypeNone
 		if mt == websocket.TextMessage {
+			log.Debug().Msgf("Received text message from device %s: %s", s.deviceId, string(rawBytes))
+
 			var meta *MetaMessage
 			meta, err = MessageFromBytes[MetaMessage](rawBytes)
 			if err != nil {
@@ -106,6 +106,8 @@ func (s *Session) loop() error {
 		}
 
 		if mt == websocket.BinaryMessage {
+			log.Debug().Msgf("Received binary message from device %s len(message) is %d", s.deviceId, len(rawBytes))
+
 			messagePayloadType = MessageTypeRawAudio
 		}
 
@@ -142,11 +144,8 @@ func (s *Session) isSessionIdMatch(sessionId string) bool {
 	return s.sessionId == sessionId
 }
 
-func (s *Session) buildState() error {
-	if s.deviceAudioMode != AudioModeNone {
-		return errors.New("session state can not be built when audio mode is set")
-	}
-
+func (s *Session) buildState(newState AudioMode) error {
+	s.deviceAudioMode = newState
 	if s.deviceAudioMode == AudioModeNone {
 		s.state = newSessionState(s, kSessionStateIdle)
 	}
@@ -159,11 +158,7 @@ func (s *Session) buildState() error {
 		s.state.ValidTransitions[kSessionStateListening] = []SessionStateKind{kSessionStateSpeaking, kSessionStateIdle}
 		s.state.ValidTransitions[kSessionStateSpeaking] = []SessionStateKind{kSessionStateListening, kSessionStateIdle}
 
-		s.state.Callbacks[KindPair{kSessionStateIdle, kSessionStateConnecting}] = []TransitionCallback{
-			logTransition,
-		}
-
-		s.state.Callbacks[KindPair{kSessionStateConnecting, kSessionStateListening}] = []TransitionCallback{
+		s.state.OnEnterCallbacks[kSessionStateIdle] = []TransitionCallback{
 			logTransition,
 		}
 	}
@@ -174,10 +169,6 @@ func (s *Session) buildState() error {
 		s.state.ValidTransitions[kSessionStateConnecting] = []SessionStateKind{kSessionStateListening, kSessionStateIdle}
 		s.state.ValidTransitions[kSessionStateListening] = []SessionStateKind{kSessionStateIdle}
 		s.state.ValidTransitions[kSessionStateSpeaking] = []SessionStateKind{kSessionStateIdle}
-
-		s.state.Callbacks[KindPair{kSessionStateIdle, kSessionStateConnecting}] = []TransitionCallback{
-			logTransition,
-		}
 	}
 	return nil
 }
@@ -189,4 +180,17 @@ func (s *Session) close() {
 	if s.conn != nil {
 		s.conn.Close()
 	}
+}
+
+func (s *Session) String() string {
+	var sb strings.Builder
+
+	sb.WriteString("Session{")
+	sb.WriteString("deviceId: " + s.deviceId + ", ")
+	sb.WriteString("clientId: " + s.clientId + ", ")
+	sb.WriteString("sessionId: " + s.sessionId + ", ")
+	sb.WriteString("protocolVersion: " + s.protocolVersion + ", ")
+	sb.WriteString("}")
+
+	return sb.String()
 }

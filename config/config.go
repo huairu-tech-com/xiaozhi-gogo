@@ -30,16 +30,16 @@ type Config struct {
 
 func DefaultConfig() *Config {
 	return &Config{
-		Addr:      "0.0.0.0:3456",
-		WebUIAddr: "localhost:3457",
+		Addr:      "0.0.0.0:3457",
+		WebUIAddr: "localhost:3456",
 		Log: &LogConfig{
 			Level:   "info",
 			LogPath: "logs/app.log",
 		},
 		Ota: &OtaConfig{
-			WsEndpoint:      "ws://localhost:3456/xiaozhi/ota/",
+			WsEndpoint:      "ws://192.168.1.7:3457/xiaozhi/ws/",
 			WsToken:         "xiaozhi-gogo",
-			FirmwareUrl:     "http://localhost:3456/firmware/latest",
+			FirmwareUrl:     "http://192.168.1.7:3457/firmware/latest",
 			FirmwareVersion: "1.0.0",
 			Timezone:        "Asia/Shanghai",
 			TimezoneOffset:  28800, // Asia/Shanghai is UTC+8

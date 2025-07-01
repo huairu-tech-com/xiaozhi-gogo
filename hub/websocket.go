@@ -42,6 +42,9 @@ func wsProtocolHandler(ctx context.Context, rctx *app.RequestContext, h *Hub) we
 			s.bearerToken = authorization[7:]
 		}
 
+		log.Info().Msgf("New session created: DeviceId=%s, ClientId=%s, SessionId=%s",
+			s.deviceId, s.clientId, s.sessionId)
+
 		if !s.isValid() {
 			log.Error().Msgf("Invalid session parameters: DeviceId=%s, ClientId=%s, SessionId=%s",
 				s.deviceId, s.clientId, s.sessionId)
@@ -60,10 +63,10 @@ func wsProtocolHandler(ctx context.Context, rctx *app.RequestContext, h *Hub) we
 			return
 		}
 
-		if err := s.populateDevice(); err != nil {
-			log.Error().Err(err).Msgf("Failed to populate session context err: %+v", err)
-			return
-		}
+		// if err := s.populateDevice(); err != nil {
+		// 	log.Error().Err(err).Msgf("Failed to populate session context err: %+v", err)
+		// 	return
+		// }
 		h.sessionMap.Set(rctx.Request.Header.Get("Device-Id"), s)
 
 		if err := s.loop(); err != nil {

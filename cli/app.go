@@ -18,9 +18,9 @@ type runnable any
 type shutdownable any
 
 func runServers(ctx context.Context, cfg *config.Config) error {
-	log.Info().Msgf("准备启动 WS 服务 %s", cfg.Addr)
-	log.Info().Msgf("准备启动 WebUI 服务 %s", cfg.WebUIAddr)
-	log.Info().Msg("准备启动 OTA 服务")
+	log.Info().Msgf("launching WS service: %s", cfg.Addr)
+	log.Info().Msgf("launching WebUI %s", cfg.WebUIAddr)
+	log.Info().Msg("launching OTA service")
 
 	hertzForDevice := server.Default(
 		server.WithHostPorts(cfg.Addr),
@@ -63,10 +63,10 @@ func runServers(ctx context.Context, cfg *config.Config) error {
 
 	select {
 	case <-ctx.Done():
-		log.Error().Err(ctx.Err()).Msg("Context取消，准备停止服务")
+		log.Error().Err(ctx.Err()).Msg("context cancelled, shutting down services")
 		break
 	case err := <-errCh:
-		log.Error().Err(err).Msgf("服务启动失败%+v", err)
+		log.Error().Err(err).Msgf("%+v", err)
 		break
 	}
 
@@ -87,7 +87,7 @@ func runServers(ctx context.Context, cfg *config.Config) error {
 			defer wg.Done()
 			if s, ok := srv.(interface{ Shutdown(context.Context) error }); ok {
 				if err := s.Shutdown(shutdownCtx); err != nil {
-					log.Error().Err(err).Msg("服务停止失败")
+					log.Error().Err(err).Msg("shutdown service failed")
 				}
 			}
 		}(srv)
