@@ -20,11 +20,21 @@ type OtaConfig struct {
 	TimezoneOffset  int32  `yaml:"timezone_offset"`  // Timezone offset in seconds, e.g., 28800 for Asia/Shanghai
 }
 
+type DoubalAsrConfig struct {
+	ApiKey    string `yaml:"api_key"`    // API key for Doubao ASR
+	AccessKey string `yaml:"access_key"` // Access key for Doubao ASR
+}
+
+type AsrConfig struct {
+	Doubao *DoubalAsrConfig `yaml:"doubao"` // Doubao ASR configuration
+}
+
 type Config struct {
 	Addr          string     `yaml:"addr"`        // endpoint of both WS and HTTP, publicly accessible
 	WebUIAddr     string     `yaml:"web_ui_addr"` // web UI address
 	Log           *LogConfig `yaml:"log"`         // log
 	Ota           *OtaConfig `yaml:"ota"`         // OTA configuration
+	Asr           *AsrConfig `yaml:"asr"`         // ASR configuration
 	EnableProfile bool       `yaml:"enable_profile"`
 }
 
@@ -35,6 +45,9 @@ func DefaultConfig() *Config {
 		Log: &LogConfig{
 			Level:   "info",
 			LogPath: "logs/app.log",
+		},
+		Asr: &AsrConfig{
+			Doubao: &DoubalAsrConfig{},
 		},
 		Ota: &OtaConfig{
 			WsEndpoint:      "ws://192.168.1.7:3457/xiaozhi/ws/",

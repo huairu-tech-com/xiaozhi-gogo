@@ -92,14 +92,20 @@ func (s *Session) handleAudio(opusData []byte) error {
 	bp3.Reserved = uint8(opusData[1])
 	bp3.PayloadSize = uint16(binary.BigEndian.Uint16(opusData[2:4]))
 
-	fmt.Printf("BinaryProtocol3 Type: %d, Reserved: %d, PayloadSize: %d\n", bp3.Type, bp3.Reserved, bp3.PayloadSize)
+	fmt.Printf("XIAOZHI => server: %d, Reserved: %d, PayloadSize: %d\n", bp3.Type, bp3.Reserved, bp3.PayloadSize)
 
 	if len(opusData) < int(bp3.PayloadSize+4) {
 		return errors.Errorf("opus data too short, expected %d bytes, got %d bytes", bp3.PayloadSize+4, len(opusData))
 	}
 	bp3.Payload = opusData[4 : 4+bp3.PayloadSize]
 
-	return nil
+	outbuf := make([]byte, 8096)
+	n, err := s.opusDecoder.Decode(bp3.Payload, outbuf)
+	if err != nil {
+		return err
+	}
+
+	return s.asrSrv.SendAudio(outbuf[:n], s.seqNo, false)
 }
 
 func (s *Session) handleAbort(raw []byte) error {

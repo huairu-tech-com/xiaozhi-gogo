@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr/doubao"
 	"github.com/huairu-tech-com/xiaozhi-gogo/utils"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -26,8 +27,12 @@ func wsHandler(h *Hub) app.HandlerFunc {
 func wsProtocolHandler(ctx context.Context, rctx *app.RequestContext, h *Hub) websocket.HertzHandler {
 	return func(conn *websocket.Conn) {
 		s := newSession(ctx)
+
 		defer func() {
 			h.sessionMap.Del(rctx.Request.Header.Get("Device-Id"))
+			if s.asrSrv != nil {
+				s.asrSrv.Close()
+			}
 			conn.Close()
 			s.close()
 		}()
@@ -60,6 +65,15 @@ func wsProtocolHandler(ctx context.Context, rctx *app.RequestContext, h *Hub) we
 		if !s.isAuthorized() {
 			log.Error().Msgf("Session not authorized: DeviceId=%s, ClientId=%s, SessionId=%s",
 				s.deviceId, s.clientId, s.sessionId)
+			return
+		}
+
+		asrConfig := doubao.DefaultConfig()
+		asrConfig.ApiKey = h.cfgAsr.Doubao.ApiKey
+		asrConfig.AccessKey = h.cfgAsr.Doubao.AccessKey
+		var err error
+		s.asrSrv, err = doubao.DefaultDialer(ctx, asrConfig)
+		if err != nil {
 			return
 		}
 

@@ -11,21 +11,38 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cornelk/hashmap"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
 
 type Hub struct {
 	cfgOta     *config.OtaConfig
+	cfgAsr     *config.AsrConfig // ASR configuration
 	repo       repo.Respository
 	sessionMap *hashmap.Map[string, *Session]
 }
 
-func New(cfgOta *config.OtaConfig) *Hub {
-	return &Hub{
+func New(cfgOta *config.OtaConfig, cfgAsr *config.AsrConfig) (*Hub, error) {
+	h := &Hub{
 		cfgOta:     cfgOta,
+		cfgAsr:     cfgAsr,
 		repo:       repo.NewInMemoryRepository(),
 		sessionMap: hashmap.New[string, *Session](),
 	}
+
+	if cfgOta == nil {
+		return nil, errors.New("ota configuration cannot be nil")
+	}
+
+	if cfgAsr == nil {
+		return nil, errors.New("asr configuration cannot be nil")
+	}
+
+	if cfgAsr.Doubao == nil {
+		return nil, errors.New("doubao ASR configuration cannot be nil")
+	}
+
+	return h, nil
 }
 
 func (h *Hub) Run(ctx context.Context) error {

@@ -45,7 +45,7 @@ func TestHelloMessageRecognize(t *testing.T) {
 
 	assert.NotNil(t, m, "expected UpHello message to be parsed successfully")
 	assert.Equal(t, int32(1), m.Version, "expected version to be 1")
-	assert.Equal(t, "websocket", m.Transport, "expected transport to be websocket")
+	assert.Equal(t, TransportType("websocket"), m.Transport, "expected transport to be websocket")
 	assert.Equal(t, "opus", m.AudioParams.Format, "expected audio format to be opus")
 	assert.Equal(t, int32(16000), m.AudioParams.SampleRate, "expected sample rate to be 16000")
 	assert.Equal(t, int32(1), m.AudioParams.Channels, "expected channels to be 1")

@@ -25,7 +25,11 @@ func runServers(ctx context.Context, cfg *config.Config) error {
 	hertzForDevice := server.Default(
 		server.WithHostPorts(cfg.Addr),
 	)
-	deviceHubSrv := hub.New(cfg.Ota)
+	deviceHubSrv, err := hub.New(cfg.Ota, cfg.Asr)
+	if err != nil {
+		return err
+	}
+
 	deviceHubSrv.Hook(hertzForDevice)
 
 	hertzForInternal := server.Default(

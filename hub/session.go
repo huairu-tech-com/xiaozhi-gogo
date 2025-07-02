@@ -3,12 +3,15 @@ package hub
 import (
 	"context"
 	"strings"
+	"sync"
 
+	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/repo"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/types"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/hertz-contrib/websocket"
+	opus "github.com/qrtc/opus-go"
 	"github.com/rs/zerolog/log"
 )
 
@@ -36,6 +39,13 @@ type Session struct {
 
 	state *SessionState
 
+	// this is kinda unable to generalize TODO
+	asrSrv          asr.AsrService
+	opusDecoder     *opus.OpusDecoder
+	asrAudioBuf     [][]byte
+	asrAudioBufLock sync.Mutex
+	seqNo           int32
+
 	msgHandlers map[MessageType]ClientMessageHandler
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -56,11 +66,32 @@ func newSession(ctx context.Context) *Session {
 
 	s.ctx, s.cancel = context.WithCancel(ctx)
 
+	var err error
+	s.opusDecoder, err = opus.CreateOpusDecoder(&opus.OpusDecoderConfig{
+		SampleRate:  16000,
+		MaxChannels: 1,
+	})
+
+	s.asrAudioBuf = make([][]byte, 0)
+	s.asrAudioBufLock = sync.Mutex{}
+
+	if err != nil {
+		panic(err)
+	}
+
 	return s
 }
 
 func (s *Session) isValid() bool {
 	return validator.New().Struct(s) == nil
+}
+
+func (s *Session) setAsr(asrSrv asr.AsrService) {
+	if asrSrv == nil {
+		log.Error().Msg("ASR service is nil")
+		return
+	}
+	s.asrSrv = asrSrv
 }
 
 // load device object from repository
@@ -177,8 +208,14 @@ func (s *Session) close() {
 	if s.cancel != nil && s.ctx.Err() != nil {
 		s.cancel()
 	}
+
 	if s.conn != nil {
 		s.conn.Close()
+	}
+
+	if s.opusDecoder != nil {
+		s.opusDecoder.Close()
+		s.opusDecoder = nil
 	}
 }
 
