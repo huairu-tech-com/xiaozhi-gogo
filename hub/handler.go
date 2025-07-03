@@ -7,7 +7,6 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
 	"github.com/hertz-contrib/websocket"
-
 	"github.com/pkg/errors"
 )
 
@@ -97,13 +96,19 @@ func (s *Session) handleAudio(opusData []byte) error {
 	}
 	bp3.Payload = opusData[4 : 4+bp3.PayloadSize]
 
-	outbuf := make([]byte, 8096)
-	n, err := s.opusDecoder.Decode(bp3.Payload, outbuf)
-	if err != nil {
-		return err
+	s.audioProcessor.PushOpus(bp3.Payload)
+	for !s.audioProcessor.IsEmpty() {
+		audioFrame, seqNo, isLast, err := s.audioProcessor.PopPCMWithVoice()
+		if err != nil {
+			return err
+		}
+
+		if err := s.asrSrv.SendAudio(audioFrame, seqNo, isLast, 50*time.Millisecond); err != nil {
+			return err
+		}
 	}
 
-	return s.asrSrv.SendAudio(outbuf[:n], s.seqNo, false, time.Millisecond*500)
+	return nil
 }
 
 func (s *Session) handleAbort(raw []byte) error {

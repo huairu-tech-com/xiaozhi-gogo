@@ -19,117 +19,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-const (
-	// https://www.volcengine.com/docs/6561/1354869?lang=zh#demo
-	DoubaoStreamAsrEndpoint = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel"
-)
-
-const (
-	// 小时版
-	DoubaoModelDuration = "volc.bigasr.sauc.duration"
-	// 并发版
-	DoubaoModelConcurrent = "volc.bigasr.sauc.concurrent"
-)
-
-var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoConn, error) {
-	headers := http.Header{}
-	headers.Set("Host", cfg.Host)
-	headers.Set("X-Api-App-Key", cfg.ApiKey)
-	headers.Set("X-Api-Access-Key", cfg.AccessKey)
-	headers.Set("X-Api-Resource-Id", DoubaoModelDuration)
-
-	connectId := uuid.New().String()
-	headers.Set("X-Api-Connect-Id", connectId)
-
-	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
-		TLSClientConfig:  &tls.Config{InsecureSkipVerify: false},
-	}
-
-	conn, resp, err := dialer.DialContext(ctx, DoubaoStreamAsrEndpoint, headers)
-	doubaoConn := &AsrDoubaoConn{
-		conn:      conn,
-		connectId: connectId,
-	}
-	if err != nil {
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Response Stats: %d\n", resp.StatusCode))
-		sb.WriteString(fmt.Sprintf("Response Headers: %v\n", resp.Header))
-		bytes, _ := io.ReadAll(resp.Body)
-
-		sb.WriteString(fmt.Sprintf("Response Body: %s\n", string(bytes)))
-		sb.WriteString(fmt.Sprintf("Error: %v\n", err))
-		return nil, errors.Wrapf(err, "failed to dial websocket: %s", sb.String())
-	}
-
-	doubaoConn.respCh = make(chan *asr.AsrResponse, 10) // buffered channel for responses
-	doubaoConn.ttLogid = resp.Header.Get("X-Tt-Logid")
-	doubaoConn.ctx, doubaoConn.cancel = context.WithCancel(ctx)
-
-	if err := doubaoConn.sendParameters(); err != nil {
-		doubaoConn.Close()
-		return nil, err
-	}
-
-	go func() {
-		if err := doubaoConn.readLoop(); err != nil {
-			doubaoConn.Close()
-		}
-	}()
-
-	return doubaoConn, err
-}
-
-// 协议版本， 当前仅有一个
-const ProtocolVersion = byte(0b0001 & 0xFF)
-
-// 包类型
-const (
-	MessageTypeFullClientRequest  = byte(0b0001 & 0xFF)
-	MessageTypeAudioOnlyRequest   = byte(0b0010 & 0xFF)
-	MessageTypeFullServerResponse = byte(0b1001 & 0xFF)
-	MessageTypeServerError        = byte(0b1111 & 0xFF)
-)
-
-// Serialization Method
-const (
-	SerializationMethodJson = byte(0b0000 & 0xFF)
-	SerializationMethodNone = byte(0b0001 & 0xFF)
-)
-
-// Message Compression
-const (
-	CompressionNone = byte(0b0000 & 0xFF)
-	CompressionGzip = byte(0b0001 & 0xFF)
-)
-
-// Message audio request last flag
-const (
-	NoSequence     = byte(0b0000 & 0xFF) // 全部音频数据
-	PosSequence    = byte(0b0001 & 0xFF) // 最后一个音频数据包
-	NegWithSequnce = byte(0b0011 & 0xFF)
-	NegSequence    = byte(0b0010 & 0xFF)
-)
-
-// Server response message type
-type ServerMessageType string
-
-const (
-	// full server response message
-	SeverMessageTypeFullServerResponse ServerMessageType = "full_server_response" // 全部音频数据包
-	// indicates an error message from the server
-	ServerMessageTypeServerError ServerMessageType = "server_error" // 错误信息
-)
-
-const (
-	ServerErrorSuccess        = 20000000 // 成功
-	ServerErrorInvalidRequest = 40000001 // 请求参数无效
-	ServerErrorEmptyAudio     = 45000002 // 空音频
-	ServerErrorTimeout        = 45000081 // 音频过短
-	ServerErrorAudioFormat    = 45000151 // 音频格式不正确
-	SererErrorInternalError   = 55000031 // 服务内部处理错误
-)
-
 type Header struct {
 	ProtocolVersion     byte // 协议版本
 	HeaderSize          byte // 头部大小
@@ -206,18 +95,62 @@ type FullServerResponsePacketPayload struct {
 
 // https://www.volcengine.com/docs/6561/1354869
 type AsrDoubaoConn struct {
+	ctx       context.Context    // 上下文
+	cancel    context.CancelFunc // 上下文取消函数
 	conn      *websocket.Conn
 	connectId string // 客户端的 connect ID
-	ttLogid   string // 服务端的 trace ID
 
-	respCh chan *asr.AsrResponse // 响应通道
-
-	ctx    context.Context    // 上下文
-	cancel context.CancelFunc // 上下文取消函数
+	ttLogid string                // 服务端的 trace ID
+	respCh  chan *asr.AsrResponse // 响应通道
 }
 
-func (conn *AsrDoubaoConn) Pressure() int32 {
-	return 0
+var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoConn, error) {
+	headers := http.Header{}
+	headers.Set("Host", cfg.Host)
+	headers.Set("X-Api-App-Key", cfg.ApiKey)
+	headers.Set("X-Api-Access-Key", cfg.AccessKey)
+	headers.Set("X-Api-Resource-Id", DoubaoModelDuration)
+
+	connectId := uuid.New().String()
+	headers.Set("X-Api-Connect-Id", connectId)
+
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+		TLSClientConfig:  &tls.Config{InsecureSkipVerify: false},
+	}
+
+	conn, resp, err := dialer.DialContext(ctx, DoubaoStreamAsrEndpoint, headers)
+	doubaoConn := &AsrDoubaoConn{
+		conn:      conn,
+		connectId: connectId,
+	}
+	if err != nil {
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Response Stats: %d\n", resp.StatusCode))
+		sb.WriteString(fmt.Sprintf("Response Headers: %v\n", resp.Header))
+		bytes, _ := io.ReadAll(resp.Body)
+
+		sb.WriteString(fmt.Sprintf("Response Body: %s\n", string(bytes)))
+		sb.WriteString(fmt.Sprintf("Error: %v\n", err))
+		return nil, errors.Wrapf(err, "failed to dial websocket: %s", sb.String())
+	}
+
+	doubaoConn.respCh = make(chan *asr.AsrResponse, 10) // buffered channel for responses
+	doubaoConn.ttLogid = resp.Header.Get("X-Tt-Logid")
+	doubaoConn.ctx, doubaoConn.cancel = context.WithCancel(ctx)
+
+	if err := doubaoConn.sendParameters(); err != nil {
+		doubaoConn.Close()
+		return nil, err
+	}
+
+	go func() {
+		if err := doubaoConn.readLoop(); err != nil {
+			doubaoConn.Close()
+		}
+	}()
+
+	return doubaoConn, err
 }
 
 func (conn *AsrDoubaoConn) String() string {
@@ -331,12 +264,6 @@ func (conn *AsrDoubaoConn) buildFullClientPacket() ([]byte, error) {
 	payload.Request.EnableDdc = false
 	payload.Request.ResultType = "single"
 	payload.Request.ShowUtterances = false
-	// payload.Request.VadSegmentDuration = 3000
-	// payload.Request.EndWindowSize = 800
-	// payload.Request.FroceToSpeechTime = 10000
-	// payload.Request.Corpus.BoostingTableId = ""
-	// payload.Request.Corpus.BosstingTableName = ""
-	// payload.Request.Corpus.CorrectTableID = ""
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -351,10 +278,10 @@ func (conn *AsrDoubaoConn) buildFullClientPacket() ([]byte, error) {
 	return packetBuffer.Bytes(), nil
 }
 
-func (conn *AsrDoubaoConn) buildAudioOnlyRequestPacket(audioData []byte, seq int32, isLastSnippet bool) ([]byte, error) {
-	packetIndicator := NoSequence // 默认是最后一个音频数据包
-	if isLastSnippet {
-		packetIndicator = NegSequence // 最后一个音频数据包
+func (conn *AsrDoubaoConn) buildAudioOnlyRequestPacket(audioData []byte, seq int, isLastFrame bool) ([]byte, error) {
+	packetIndicator := NoSequence
+	if isLastFrame {
+		packetIndicator = NegSequence
 		seq = -seq
 	}
 	header := conn.buildHeader(MessageTypeAudioOnlyRequest,
@@ -372,7 +299,6 @@ func (conn *AsrDoubaoConn) buildAudioOnlyRequestPacket(audioData []byte, seq int
 	zippedData := buffer.Bytes()
 	packetBuffer := bytes.Buffer{}
 	binary.Write(&packetBuffer, binary.BigEndian, header.ToBytes())
-	// binary.Write(&packetBuffer, binary.BigEndian, seq)
 	binary.Write(&packetBuffer, binary.BigEndian, uint32(len(zippedData)))
 	binary.Write(&packetBuffer, binary.BigEndian, zippedData)
 	return packetBuffer.Bytes(), nil
@@ -426,7 +352,7 @@ func (conn *AsrDoubaoConn) ResponseCh() chan *asr.AsrResponse {
 	return conn.respCh
 }
 
-func (conn *AsrDoubaoConn) SendAudio(pcm []byte, seq int32, isLast bool, timeout time.Duration) error {
+func (conn *AsrDoubaoConn) SendAudio(pcm []byte, seq int, isLast bool, timeout time.Duration) error {
 	var err error
 	var data []byte
 	err = conn.conn.SetWriteDeadline(time.Now().Add(timeout))
@@ -445,6 +371,8 @@ func (conn *AsrDoubaoConn) SendAudio(pcm []byte, seq int32, isLast bool, timeout
 		conn.cancel()
 		return err
 	}
+
+	println("Sent audio data to Doubao ASR service, seq:", seq, "isLast:", isLast)
 
 	return nil
 }
@@ -522,26 +450,19 @@ func (conn *AsrDoubaoConn) parseServerResponseError(raw []byte) (*Header, error)
 	header := &Header{}
 	r := bytes.NewReader(raw)
 	b0, _ := r.ReadByte()
-	protocolVersion := (b0 >> 4) & 0x0F
-	headerSize := b0 & 0x0F
-	header.ProtocolVersion = protocolVersion
-	header.HeaderSize = headerSize
+	header.ProtocolVersion = (b0 >> 4) & 0x0F
+	header.HeaderSize = b0 & 0x0F
 
 	b1, _ := r.ReadByte()
-	messageType := b1 >> 4 & 0x0F
-	flags := b1 & 0x0F
-	header.MessageType = messageType
-	header.Flags = flags
+	header.MessageType = b1 >> 4 & 0x0F
+	header.Flags = b1 & 0x0F
 
 	b2, _ := r.ReadByte()
-	serializeMethod := b2 >> 4 & 0x0F
-	compression := b2 & 0x0F
-	header.SerializationMethod = serializeMethod
-	header.Compression = compression
+	header.SerializationMethod = b2 >> 4 & 0x0F
+	header.Compression = b2 & 0x0F
 
 	b3, _ := r.ReadByte()
-	reserved := b3
-	header.Reserved = reserved
+	header.Reserved = b3
 
 	var errMessageCode uint32
 	var errMessageSize uint32

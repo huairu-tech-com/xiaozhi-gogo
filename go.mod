@@ -3,6 +3,7 @@ module github.com/huairu-tech-com/xiaozhi-gogo
 go 1.24.4
 
 require (
+	github.com/baabaaox/go-webrtcvad v1.1.1
 	github.com/bytedance/sonic v1.13.2
 	github.com/cloudwego/hertz v0.10.0
 	github.com/cornelk/hashmap v1.0.8
@@ -16,7 +17,6 @@ require (
 	github.com/rs/zerolog v1.34.0
 	github.com/samber/lo v1.51.0
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d
 )
 
 require (
@@ -31,6 +31,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/golang/protobuf v1.5.0 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect

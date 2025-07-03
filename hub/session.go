@@ -3,7 +3,6 @@ package hub
 import (
 	"context"
 	"strings"
-	"sync"
 
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/repo"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/hertz-contrib/websocket"
-	opus "github.com/qrtc/opus-go"
 	"github.com/rs/zerolog/log"
 )
 
@@ -40,11 +38,9 @@ type Session struct {
 	state *SessionState
 
 	// this is kinda unable to generalize TODO
-	asrSrv          asr.AsrService
-	opusDecoder     *opus.OpusDecoder
-	asrAudioBuf     [][]byte
-	asrAudioBufLock sync.Mutex
-	seqNo           int32
+	asrSrv         asr.AsrService
+	audioProcessor *AudioProcessor
+	seqNo          int32
 
 	msgHandlers map[MessageType]ClientMessageHandler
 	ctx         context.Context
@@ -65,16 +61,8 @@ func newSession(ctx context.Context) *Session {
 	s.msgHandlers[MessageTypeListenDetect] = s.handleListenDetect
 
 	s.ctx, s.cancel = context.WithCancel(ctx)
-
 	var err error
-	s.opusDecoder, err = opus.CreateOpusDecoder(&opus.OpusDecoderConfig{
-		SampleRate:  16000,
-		MaxChannels: 1,
-	})
-
-	s.asrAudioBuf = make([][]byte, 0)
-	s.asrAudioBufLock = sync.Mutex{}
-
+	s.audioProcessor, err = NewAudioProcessor(true)
 	if err != nil {
 		panic(err)
 	}
@@ -205,9 +193,8 @@ func (s *Session) Close() {
 		s.conn.Close()
 	}
 
-	if s.opusDecoder != nil {
-		s.opusDecoder.Close()
-		s.opusDecoder = nil
+	if s.audioProcessor != nil {
+		s.audioProcessor.Close()
 	}
 }
 

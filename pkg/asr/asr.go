@@ -7,7 +7,7 @@ type AsrResponse struct {
 }
 
 type AsrService interface {
-	SendAudio(pcm []byte, seq int32, isLastFrame bool, timeout time.Duration) error
+	SendAudio(pcm []byte, seq int, isLastFrame bool, timeout time.Duration) error
 	ResponseCh() chan *AsrResponse
 	Close() error
 }
