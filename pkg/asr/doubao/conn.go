@@ -372,8 +372,6 @@ func (conn *AsrDoubaoConn) SendAudio(pcm []byte, seq int, isLast bool, timeout t
 		return err
 	}
 
-	println("Sent audio data to Doubao ASR service, seq:", seq, "isLast:", isLast)
-
 	return nil
 }
 
@@ -386,7 +384,7 @@ func checkMessageType(mt byte) ServerMessageType {
 		return ServerMessageTypeServerError
 	}
 
-	return "unknown"
+	return ServerMessageTypeUnknown
 }
 
 func (conn *AsrDoubaoConn) parseFullServerResponse(raw []byte) (*Header, *FullServerResponsePacketPayload, error) {

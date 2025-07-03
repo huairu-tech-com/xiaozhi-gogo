@@ -45,6 +45,7 @@ const (
 type ServerMessageType string
 
 const (
+	ServerMessageTypeUnknown ServerMessageType = "unknown" // 全部音频数据包
 	// full server response message
 	SeverMessageTypeFullServerResponse ServerMessageType = "full_server_response" // 全部音频数据包
 	// indicates an error message from the server
