@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -18,7 +17,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr"
 	"github.com/pkg/errors"
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -43,8 +41,6 @@ var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoC
 	connectId := uuid.New().String()
 	headers.Set("X-Api-Connect-Id", connectId)
 
-	fmt.Printf("Connecting to Doubao ASR with connectId: %s\n", connectId)
-	fmt.Printf("Using API Key: %+v\n", headers)
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 		TLSClientConfig:  &tls.Config{InsecureSkipVerify: false},
@@ -56,20 +52,21 @@ var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoC
 		connectId: connectId,
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Response Stats: %d\n", resp.StatusCode)
-		fmt.Fprintf(os.Stderr, "Response Headers: %v\n", resp.Header)
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Response Stats: %d\n", resp.StatusCode))
+		sb.WriteString(fmt.Sprintf("Response Headers: %v\n", resp.Header))
 		bytes, _ := io.ReadAll(resp.Body)
-		fmt.Fprintf(os.Stderr, "Response Body: %s\n", string(bytes))
-		return nil, err
+
+		sb.WriteString(fmt.Sprintf("Response Body: %s\n", string(bytes)))
+		sb.WriteString(fmt.Sprintf("Error: %v\n", err))
+		return nil, errors.Wrapf(err, "failed to dial websocket: %s", sb.String())
 	}
 
 	doubaoConn.respCh = make(chan *asr.AsrResponse, 10) // buffered channel for responses
 	doubaoConn.ctx, doubaoConn.cancel = context.WithCancel(ctx)
 	doubaoConn.ttLogid = resp.Header.Get("X-Tt-Logid")
 
-	fmt.Printf("Connected to Doubao ASR with connectId: %s, ttLogid: %s\n", doubaoConn.connectId, doubaoConn.ttLogid)
-
-	if err := doubaoConn.sendParameter(); err != nil {
+	if err := doubaoConn.sendParameters(); err != nil {
 		return nil, err
 	}
 
@@ -79,34 +76,34 @@ var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoC
 }
 
 // 协议版本， 当前仅有一个
-const ProtocolVersion = 0b0001 & 0xFF
+const ProtocolVersion = byte(0b0001 & 0xFF)
 
 // 包类型
 const (
-	MessageTypeFullClientRequest  = 0b0001 & 0xFF
-	MessageTypeAudioOnlyRequest   = 0b0010 & 0xFF
-	MessageTypeFullServerResponse = 0b1001 & 0xFF
-	MessageTypeServerError        = 0b1111 & 0xFF
+	MessageTypeFullClientRequest  = byte(0b0001 & 0xFF)
+	MessageTypeAudioOnlyRequest   = byte(0b0010 & 0xFF)
+	MessageTypeFullServerResponse = byte(0b1001 & 0xFF)
+	MessageTypeServerError        = byte(0b1111 & 0xFF)
 )
 
 // Serialization Method
 const (
-	SerializationMethodJson = 0b0000 & 0xFF
-	SerializationMethodNone = 0b0001 & 0xFF
+	SerializationMethodJson = byte(0b0000 & 0xFF)
+	SerializationMethodNone = byte(0b0001 & 0xFF)
 )
 
 // Message Compression
 const (
-	CompressionNone = 0b0000 & 0xFF
-	CompressionGzip = 0b0001 & 0xFF
+	CompressionNone = byte(0b0000 & 0xFF)
+	CompressionGzip = byte(0b0001 & 0xFF)
 )
 
 // Message audio request last flag
 const (
-	NoSequence     = 0b0000 & 0xFF // 全部音频数据
-	PosSequence    = 0b0001 & 0xFF // 最后一个音频数据包
-	NegSequence    = 0b0010 & 0xFF //
-	NegWithSequnce = 0b0011 & 0xFF //
+	NoSequence     = byte(0b0000 & 0xFF) // 全部音频数据
+	PosSequence    = byte(0b0001 & 0xFF) // 最后一个音频数据包
+	NegWithSequnce = byte(0b0011 & 0xFF)
+	NegSequence    = byte(0b0010 & 0xFF)
 )
 
 // Server response message type
@@ -122,12 +119,30 @@ const (
 const (
 	ServerErrorSuccess        = 20000000 // 成功
 	ServerErrorInvalidRequest = 40000001 // 请求参数无效
-
-	ServerErrorEmptyAudio   = 45000002 // 空音频
-	ServerErrorTimeout      = 45000081 // 音频过短
-	ServerErrorAudioFormat  = 45000151 // 音频格式不正确
-	SererErrorInternalError = 55000031 // 服务内部处理错误
+	ServerErrorEmptyAudio     = 45000002 // 空音频
+	ServerErrorTimeout        = 45000081 // 音频过短
+	ServerErrorAudioFormat    = 45000151 // 音频格式不正确
+	SererErrorInternalError   = 55000031 // 服务内部处理错误
 )
+
+type Header struct {
+	ProtocolVersion     byte // 协议版本
+	HeaderSize          byte // 头部大小
+	MessageType         byte // 消息类型
+	Flags               byte // 标志位
+	SerializationMethod byte // 序列化方法
+	Compression         byte // 压缩方法
+	Reserved            byte // 保留字节，当前设置为 0
+}
+
+func (h Header) ToBytes() []byte {
+	bytes := make([]byte, 4)
+	bytes[0] = (h.ProtocolVersion << 4) | h.HeaderSize
+	bytes[1] = (h.MessageType << 4) | h.Flags
+	bytes[2] = (h.SerializationMethod << 4) | h.Compression
+	bytes[3] = 0 // reserved byte, currently set to 0
+	return bytes
+}
 
 type FullClientRequestPayload struct {
 	User struct {
@@ -237,8 +252,7 @@ func (conn *AsrDoubaoConn) close() error {
 	return nil
 }
 
-// this is the first handshake message send and response
-func (conn *AsrDoubaoConn) sendParameter() error {
+func (conn *AsrDoubaoConn) sendParameters() error {
 	var err error
 	var mt int
 	var bytes []byte
@@ -284,13 +298,14 @@ func (conn *AsrDoubaoConn) sendParameter() error {
 	}
 
 	if checkMessageType(bytes[1]) == ServerMessageTypeServerError {
-		err = errors.Errorf("expected server error message, got %d",
-			conn.parseServerResponseError(bytes))
-		goto end
+		_, err := conn.parseServerResponseError(bytes)
+		if err != nil {
+			goto end
+		}
 	}
 
 	if checkMessageType(bytes[1]) == SeverMessageTypeFullServerResponse {
-		_, err := conn.parseFullServerResponse(bytes)
+		_, _, err := conn.parseFullServerResponse(bytes)
 		if err != nil {
 			goto end
 		}
@@ -310,6 +325,7 @@ func (conn *AsrDoubaoConn) buildFullClientPacket() ([]byte, error) {
 		NoSequence,
 		SerializationMethodJson,
 		CompressionNone)
+
 	var payload FullClientRequestPayload
 	payload.User.Uid = "test_user"
 	payload.User.Did = "test_device"
@@ -341,7 +357,7 @@ func (conn *AsrDoubaoConn) buildFullClientPacket() ([]byte, error) {
 	}
 
 	packetBuffer := bytes.Buffer{}
-	binary.Write(&packetBuffer, binary.BigEndian, header)
+	binary.Write(&packetBuffer, binary.BigEndian, header.ToBytes())
 	binary.Write(&packetBuffer, binary.BigEndian, uint32(len(payloadBytes)))
 	binary.Write(&packetBuffer, binary.BigEndian, payloadBytes)
 
@@ -355,19 +371,20 @@ func (conn *AsrDoubaoConn) buildAudioOnlyRequestPacket(audioData []byte, seq int
 		seq = -seq
 	}
 	header := conn.buildHeader(MessageTypeAudioOnlyRequest,
-		int8(packetIndicator),
+		byte(packetIndicator),
 		SerializationMethodNone,
 		CompressionGzip)
 
 	var buffer bytes.Buffer
 	zipwriter := gzip.NewWriter(&buffer)
 	if _, err := zipwriter.Write(audioData); err != nil {
-		return nil, errors.Wrap(err, "failed to create zip writer")
+		return nil, err
 	}
 	zipwriter.Close()
+
 	zippedData := buffer.Bytes()
 	packetBuffer := bytes.Buffer{}
-	binary.Write(&packetBuffer, binary.BigEndian, header)
+	binary.Write(&packetBuffer, binary.BigEndian, header.ToBytes())
 	// binary.Write(&packetBuffer, binary.BigEndian, seq)
 	binary.Write(&packetBuffer, binary.BigEndian, uint32(len(zippedData)))
 	binary.Write(&packetBuffer, binary.BigEndian, zippedData)
@@ -375,11 +392,7 @@ func (conn *AsrDoubaoConn) buildAudioOnlyRequestPacket(audioData []byte, seq int
 }
 
 func (conn *AsrDoubaoConn) enterLoop() error {
-	go func() {
-		if err := conn.readText(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading text: %v\n", err)
-		}
-	}()
+	go conn.readText()
 
 	<-conn.ctx.Done()
 	return conn.ctx.Err()
@@ -387,31 +400,19 @@ func (conn *AsrDoubaoConn) enterLoop() error {
 
 func (conn *AsrDoubaoConn) readText() error {
 	defer func() {
-		fmt.Println("11111111111111111111111111111111111111111111")
-		fmt.Println("11111111111111111111111111111111111111111111")
-		fmt.Println("11111111111111111111111111111111111111111111")
-		fmt.Println("11111111111111111111111111111111111111111111")
-		fmt.Println("11111111111111111111111111111111111111111111")
 		conn.cancel()
 		conn.conn.Close()
 	}()
 
-	ticker := time.NewTicker(400 * time.Millisecond)
-	defer ticker.Stop()
-
 	for {
 		select {
-		case <-ticker.C:
-			fmt.Printf("======== Dida dida ==== \n")
 		case <-conn.ctx.Done():
 			return conn.ctx.Err()
 		default:
 			conn.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 			mt, bytes, err := conn.conn.ReadMessage()
-			fmt.Printf("DOUBAO => ASR: %d, length: %d\n", mt, len(bytes))
-
 			if err != nil {
-				return errors.Wrap(err, "failed to read message in readText")
+				return err
 			}
 
 			if mt != websocket.BinaryMessage {
@@ -424,19 +425,21 @@ func (conn *AsrDoubaoConn) readText() error {
 
 			switch checkMessageType(bytes[1]) {
 			case SeverMessageTypeFullServerResponse:
-				payload, err := conn.parseFullServerResponse(bytes)
+				_, payload, err := conn.parseFullServerResponse(bytes)
 				if err != nil {
-					return errors.Wrap(err, "failed to parse full server response")
+					return err
 				}
-				fmt.Printf("DOUBAO => Server : %+v\n", payload)
-				// conn.respCh <- &asr.AsrResponse{
-				// 	Text: payload.Result.Text,
-				// }
+				if conn.respCh != nil {
+					conn.respCh <- &asr.AsrResponse{
+						Text: payload.Result.Text,
+					}
+
+				}
 
 			case ServerMessageTypeServerError:
-				err := conn.parseServerResponseError(bytes)
+				_, err := conn.parseServerResponseError(bytes)
 				if err != nil {
-					return errors.Wrap(err, "failed to parse server response error")
+					return err
 				}
 
 			default:
@@ -451,15 +454,9 @@ func (conn *AsrDoubaoConn) ResponseCh() chan *asr.AsrResponse {
 }
 
 func (conn *AsrDoubaoConn) SendAudio(pcm []byte, seq int32, isLast bool) error {
-	if len(pcm) < 100 {
-		return nil
-	}
-
 	if conn.ctx.Err() != nil {
 		return conn.ctx.Err()
 	}
-
-	fmt.Printf("XIAOZHI => server => ASR : %d\n", len(pcm))
 
 	var err error
 	var data []byte
@@ -498,103 +495,116 @@ func checkMessageType(mt byte) ServerMessageType {
 	return "unknown"
 }
 
-func (conn *AsrDoubaoConn) parseFullServerResponse(raw []byte) (*FullServerResponsePacketPayload, error) {
+func (conn *AsrDoubaoConn) parseFullServerResponse(raw []byte) (*Header, *FullServerResponsePacketPayload, error) {
+	// 4 header bytes + 4 payload size bytes + 4 sequence bytes
+	if len(raw) < 12 {
+		return nil, nil, errors.New("raw data too short to parse full server response")
+	}
+
+	var header Header
+	r := bytes.NewReader(raw)
+	b0, _ := r.ReadByte()
+	protocolVersion := (b0 >> 4) & 0xFF
+	headerSize := b0 & 0xFF
+	header.ProtocolVersion = protocolVersion
+	header.HeaderSize = headerSize
+
+	b1, _ := r.ReadByte()
+	messageType := b1 >> 4 & 0xFF
+	flags := b1 & 0xFF
+	header.MessageType = messageType
+	header.Flags = flags
+
+	b2, _ := r.ReadByte()
+	serializeMethod := b2 >> 4 & 0xFF
+	compression := b2 & 0xFF
+	header.SerializationMethod = serializeMethod
+	header.Compression = compression
+
+	b3, _ := r.ReadByte()
+	reserved := b3
+	header.Reserved = reserved
+
+	var sequence uint32
+	if err := binary.Read(r, binary.BigEndian, &sequence); err != nil {
+		return nil, nil, errors.Wrap(err, "failed to read sequence number")
+	}
+
+	var payloadSize uint32
+	if err := binary.Read(r, binary.BigEndian, &payloadSize); err != nil {
+		return nil, nil, errors.Wrap(err, "failed to read payload size")
+	}
+
+	if len(raw) != int(12+payloadSize) {
+		return nil, nil, errors.Errorf("raw data length %d does not match expected length %d", len(raw), 8+payloadSize)
+	}
+
+	var payload FullServerResponsePacketPayload
+	if json.NewDecoder(r).Decode(&payload) != nil {
+		return nil, nil, errors.New("failed to decode full server response payload")
+	}
+
+	return &header, &payload, nil
+}
+
+func (conn *AsrDoubaoConn) parseServerResponseError(raw []byte) (*Header, error) {
 	// 4 header bytes + 4 payload size bytes + 4 sequence bytes
 	if len(raw) < 12 {
 		return nil, errors.New("raw data too short to parse full server response")
 	}
 
+	header := &Header{}
 	r := bytes.NewReader(raw)
 	b0, _ := r.ReadByte()
 	protocolVersion := (b0 >> 4) & 0x0F
 	headerSize := b0 & 0x0F
+	header.ProtocolVersion = protocolVersion
+	header.HeaderSize = headerSize
 
 	b1, _ := r.ReadByte()
 	messageType := b1 >> 4 & 0x0F
 	flags := b1 & 0x0F
+	header.MessageType = messageType
+	header.Flags = flags
 
 	b2, _ := r.ReadByte()
 	serializeMethod := b2 >> 4 & 0x0F
 	compression := b2 & 0x0F
+	header.SerializationMethod = serializeMethod
+	header.Compression = compression
 
 	b3, _ := r.ReadByte()
 	reserved := b3
-
-	var sequence uint32
-	if err := binary.Read(r, binary.BigEndian, &sequence); err != nil {
-		return nil, err
-	}
-
-	var payloadSize uint32
-	if err := binary.Read(r, binary.BigEndian, &payloadSize); err != nil {
-		return nil, err
-	}
-
-	log.Debug().Msgf("ProtocolVersion: %d, HeaderSize: %d, MessageType: %d, Flags: %d, SerializeMethod: %d, Compression: %d, Reserved: %d, PayloadSize: %d",
-		protocolVersion, headerSize, messageType, flags, serializeMethod, compression, reserved, payloadSize)
-
-	if len(raw) != int(12+payloadSize) {
-		return nil, errors.Errorf("raw data length %d does not match expected length %d", len(raw), 8+payloadSize)
-	}
-
-	var payload FullServerResponsePacketPayload
-	if json.NewDecoder(r).Decode(&payload) != nil {
-		return nil, errors.New("failed to decode full server response payload")
-	}
-
-	return &payload, nil
-}
-
-func (conn *AsrDoubaoConn) parseServerResponseError(raw []byte) error {
-	// 4 header bytes + 4 payload size bytes + 4 sequence bytes
-	if len(raw) < 12 {
-		return errors.New("raw data too short to parse full server response")
-	}
-
-	r := bytes.NewReader(raw)
-	b0, _ := r.ReadByte()
-	protocolVersion := (b0 >> 4) & 0x0F
-	headerSize := b0 & 0x0F
-
-	b1, _ := r.ReadByte()
-	messageType := b1 >> 4 & 0x0F
-	flags := b1 & 0x0F
-
-	b2, _ := r.ReadByte()
-	serializeMethod := b2 >> 4 & 0x0F
-	compression := b2 & 0x0F
-
-	b3, _ := r.ReadByte()
-	reserved := b3
+	header.Reserved = reserved
 
 	var errMessageCode uint32
 	var errMessageSize uint32
 
 	if err := binary.Read(r, binary.BigEndian, &errMessageCode); err != nil {
-		return err
+		return nil, errors.Wrap(err, "failed to read error message code")
 	}
 
 	if err := binary.Read(r, binary.BigEndian, &errMessageSize); err != nil {
-		return err
+		return nil, errors.Wrap(err, "failed to read error message size")
 	}
 
-	log.Debug().Msgf("ProtocolVersion: %d, HeaderSize: %d, MessageType: %d, Flags: %d, SerializeMethod: %d, Compression: %d, Reserved: %d, PayloadSize: %d",
-		protocolVersion, headerSize, messageType, flags, serializeMethod, compression, reserved, errMessageSize)
-
 	if len(raw) < 12+int(errMessageSize) {
-		return errors.Errorf("raw data length %d does not match expected length %d", len(raw), 12+errMessageSize)
+		return nil, errors.Errorf("raw data length %d does not match expected length %d", len(raw), 12+errMessageSize)
 	}
 
 	message := string(raw[12 : 12+errMessageSize])
-	return errors.Errorf("server error: code %d, message: %s", errMessageCode, message)
+	return header, errors.Errorf("server error: code %d, message: %s", errMessageCode, message)
 }
 
-func (conn *AsrDoubaoConn) buildHeader(mt, flags, serializeMethod, compression int8) []byte {
-	headerSize := 0x01 // 4
-	header := make([]byte, 4)
-	header[0] = byte((ProtocolVersion << 4) | headerSize)
-	header[1] = byte((mt << 4) | (flags & 0x0F))
-	header[2] = byte((serializeMethod << 4) | compression)
-	header[3] = 0 // reserved byte, currently set to 0
+func (conn *AsrDoubaoConn) buildHeader(mt, flags, serializeMethod, compression byte) *Header {
+	header := &Header{}
+	header.ProtocolVersion = ProtocolVersion
+	header.HeaderSize = byte(0x04)
+	header.MessageType = mt
+	header.Flags = flags
+	header.SerializationMethod = serializeMethod
+	header.Compression = compression
+	header.Reserved = 0 // 保留字节，当前设置为 0
+
 	return header
 }
