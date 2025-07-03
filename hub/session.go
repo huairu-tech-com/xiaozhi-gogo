@@ -86,14 +86,6 @@ func (s *Session) isValid() bool {
 	return validator.New().Struct(s) == nil
 }
 
-func (s *Session) setAsr(asrSrv asr.AsrService) {
-	if asrSrv == nil {
-		log.Error().Msg("ASR service is nil")
-		return
-	}
-	s.asrSrv = asrSrv
-}
-
 // load device object from repository
 func (s *Session) populateDevice() error {
 	var err error
@@ -204,7 +196,7 @@ func (s *Session) buildState(newState AudioMode) error {
 	return nil
 }
 
-func (s *Session) close() {
+func (s *Session) Close() {
 	if s.cancel != nil && s.ctx.Err() != nil {
 		s.cancel()
 	}

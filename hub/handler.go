@@ -2,7 +2,7 @@ package hub
 
 import (
 	"encoding/binary"
-	"fmt"
+	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
@@ -92,8 +92,6 @@ func (s *Session) handleAudio(opusData []byte) error {
 	bp3.Reserved = uint8(opusData[1])
 	bp3.PayloadSize = uint16(binary.BigEndian.Uint16(opusData[2:4]))
 
-	fmt.Printf("XIAOZHI => server: %d, Reserved: %d, PayloadSize: %d\n", bp3.Type, bp3.Reserved, bp3.PayloadSize)
-
 	if len(opusData) < int(bp3.PayloadSize+4) {
 		return errors.Errorf("opus data too short, expected %d bytes, got %d bytes", bp3.PayloadSize+4, len(opusData))
 	}
@@ -105,7 +103,7 @@ func (s *Session) handleAudio(opusData []byte) error {
 		return err
 	}
 
-	return s.asrSrv.SendAudio(outbuf[:n], s.seqNo, false)
+	return s.asrSrv.SendAudio(outbuf[:n], s.seqNo, false, time.Millisecond*500)
 }
 
 func (s *Session) handleAbort(raw []byte) error {

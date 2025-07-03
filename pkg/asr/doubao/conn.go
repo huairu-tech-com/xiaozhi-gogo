@@ -63,14 +63,19 @@ var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoC
 	}
 
 	doubaoConn.respCh = make(chan *asr.AsrResponse, 10) // buffered channel for responses
-	doubaoConn.ctx, doubaoConn.cancel = context.WithCancel(ctx)
 	doubaoConn.ttLogid = resp.Header.Get("X-Tt-Logid")
+	doubaoConn.ctx, doubaoConn.cancel = context.WithCancel(ctx)
 
 	if err := doubaoConn.sendParameters(); err != nil {
+		doubaoConn.Close()
 		return nil, err
 	}
 
-	go doubaoConn.enterLoop()
+	go func() {
+		if err := doubaoConn.readLoop(); err != nil {
+			doubaoConn.Close()
+		}
+	}()
 
 	return doubaoConn, err
 }
@@ -211,10 +216,6 @@ type AsrDoubaoConn struct {
 	cancel context.CancelFunc // 上下文取消函数
 }
 
-func (conn *AsrDoubaoConn) Err() error {
-	return conn.ctx.Err()
-}
-
 func (conn *AsrDoubaoConn) Pressure() int32 {
 	return 0
 }
@@ -232,16 +233,12 @@ func (conn *AsrDoubaoConn) String() string {
 }
 
 func (conn *AsrDoubaoConn) Close() error {
-	return conn.close()
-}
-
-func (conn *AsrDoubaoConn) close() error {
-	if conn.conn != nil {
-		return conn.conn.Close()
-	}
-
 	if conn.ctx.Err() != nil {
 		conn.cancel()
+	}
+
+	if conn.conn != nil {
+		conn.conn.Close()
 	}
 
 	if conn.respCh != nil {
@@ -261,62 +258,52 @@ func (conn *AsrDoubaoConn) sendParameters() error {
 
 	w, err := conn.conn.NextWriter(websocket.BinaryMessage)
 	if err != nil {
-		goto end
+		return err
 	}
 
 	fullClientPacket, err = conn.buildFullClientPacket()
 	if err != nil {
-		goto end
+		return err
 	}
 
 	n, err = w.Write(fullClientPacket)
 	if err != nil {
-		goto end
+		return err
 	}
 
 	if len(fullClientPacket) != n {
-		err = errors.New("failed to write full client packet")
-		goto end
+		return errors.New("failed to write full client packet")
 	}
-
 	w.Close()
 
 	mt, bytes, err = conn.conn.ReadMessage()
 	if err != nil {
-		err = errors.Wrap(err, "failed to read message after sending full client packet")
-		goto end
+		return err
 	}
 
 	if mt != websocket.BinaryMessage {
-		err = errors.New("expected binary message, got text message")
-		goto end
+		return errors.New("expected binary message, got text message")
 	}
 
 	if len(bytes) < 4 {
-		err = errors.New("message too short, expected at least 4 bytes")
-		goto end
+		return errors.New("message too short, expected at least 4 bytes")
 	}
 
 	if checkMessageType(bytes[1]) == ServerMessageTypeServerError {
 		_, err := conn.parseServerResponseError(bytes)
 		if err != nil {
-			goto end
+			return err
 		}
 	}
 
 	if checkMessageType(bytes[1]) == SeverMessageTypeFullServerResponse {
 		_, _, err := conn.parseFullServerResponse(bytes)
 		if err != nil {
-			goto end
+			return err
 		}
 	}
 
-end:
-	if err != nil {
-		conn.close()
-	}
-
-	return err
+	return nil
 }
 
 func (conn *AsrDoubaoConn) buildFullClientPacket() ([]byte, error) {
@@ -391,25 +378,12 @@ func (conn *AsrDoubaoConn) buildAudioOnlyRequestPacket(audioData []byte, seq int
 	return packetBuffer.Bytes(), nil
 }
 
-func (conn *AsrDoubaoConn) enterLoop() error {
-	go conn.readText()
-
-	<-conn.ctx.Done()
-	return conn.ctx.Err()
-}
-
-func (conn *AsrDoubaoConn) readText() error {
-	defer func() {
-		conn.cancel()
-		conn.conn.Close()
-	}()
-
+func (conn *AsrDoubaoConn) readLoop() error {
 	for {
 		select {
 		case <-conn.ctx.Done():
 			return conn.ctx.Err()
 		default:
-			conn.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 			mt, bytes, err := conn.conn.ReadMessage()
 			if err != nil {
 				return err
@@ -433,7 +407,6 @@ func (conn *AsrDoubaoConn) readText() error {
 					conn.respCh <- &asr.AsrResponse{
 						Text: payload.Result.Text,
 					}
-
 				}
 
 			case ServerMessageTypeServerError:
@@ -453,34 +426,27 @@ func (conn *AsrDoubaoConn) ResponseCh() chan *asr.AsrResponse {
 	return conn.respCh
 }
 
-func (conn *AsrDoubaoConn) SendAudio(pcm []byte, seq int32, isLast bool) error {
-	if conn.ctx.Err() != nil {
-		return conn.ctx.Err()
-	}
-
+func (conn *AsrDoubaoConn) SendAudio(pcm []byte, seq int32, isLast bool, timeout time.Duration) error {
 	var err error
 	var data []byte
-	err = conn.conn.SetWriteDeadline(time.Now().Add(1 * time.Second))
+	err = conn.conn.SetWriteDeadline(time.Now().Add(timeout))
 	if err != nil {
-		goto end
+		conn.cancel()
+		return err
 	}
 
 	data, err = conn.buildAudioOnlyRequestPacket(pcm, seq, isLast)
 	if err != nil {
-		goto end
+		conn.cancel()
+		return err
 	}
 
 	if err := conn.conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
-		goto end
-	}
-
-end:
-	if err != nil {
 		conn.cancel()
-		conn.conn.Close()
+		return err
 	}
 
-	return err
+	return nil
 }
 
 func checkMessageType(mt byte) ServerMessageType {
@@ -599,7 +565,7 @@ func (conn *AsrDoubaoConn) parseServerResponseError(raw []byte) (*Header, error)
 func (conn *AsrDoubaoConn) buildHeader(mt, flags, serializeMethod, compression byte) *Header {
 	header := &Header{}
 	header.ProtocolVersion = ProtocolVersion
-	header.HeaderSize = byte(0x04)
+	header.HeaderSize = byte(0x01)
 	header.MessageType = mt
 	header.Flags = flags
 	header.SerializationMethod = serializeMethod

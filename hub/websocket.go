@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr/doubao"
@@ -26,15 +27,16 @@ func wsHandler(h *Hub) app.HandlerFunc {
 
 func wsProtocolHandler(ctx context.Context, rctx *app.RequestContext, h *Hub) websocket.HertzHandler {
 	return func(conn *websocket.Conn) {
+		var err error
 		s := newSession(ctx)
 
 		defer func() {
 			h.sessionMap.Del(rctx.Request.Header.Get("Device-Id"))
-			if s.asrSrv != nil {
+			if !utils.IsNilInterface(s.asrSrv) {
 				s.asrSrv.Close()
 			}
 			conn.Close()
-			s.close()
+			s.Close()
 		}()
 
 		s.hub = h
@@ -71,11 +73,23 @@ func wsProtocolHandler(ctx context.Context, rctx *app.RequestContext, h *Hub) we
 		asrConfig := doubao.DefaultConfig()
 		asrConfig.ApiKey = h.cfgAsr.Doubao.ApiKey
 		asrConfig.AccessKey = h.cfgAsr.Doubao.AccessKey
-		var err error
 		s.asrSrv, err = doubao.DefaultDialer(ctx, asrConfig)
 		if err != nil {
+			log.Error().Err(err).Msgf("Failed to connect to ASR service: %+v", err)
 			return
 		}
+
+		go func() {
+			asrTextCh := s.asrSrv.ResponseCh()
+			for {
+				response, ok := <-asrTextCh
+				if !ok {
+					return
+				}
+
+				fmt.Printf("Received ASR response: %v", response)
+			}
+		}()
 
 		// if err := s.populateDevice(); err != nil {
 		// 	log.Error().Err(err).Msgf("Failed to populate session context err: %+v", err)
@@ -85,6 +99,7 @@ func wsProtocolHandler(ctx context.Context, rctx *app.RequestContext, h *Hub) we
 
 		if err := s.loop(); err != nil {
 			log.Error().Err(err).Msgf("Session loop error: %+v", err)
+			return
 		}
 	}
 }
