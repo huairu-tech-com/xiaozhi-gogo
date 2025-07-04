@@ -16,6 +16,7 @@ require (
 	github.com/qrtc/opus-go v0.0.1
 	github.com/rs/zerolog v1.34.0
 	github.com/samber/lo v1.51.0
+	github.com/sashabaranov/go-openai v1.40.3
 	github.com/stretchr/testify v1.10.0
 )
 

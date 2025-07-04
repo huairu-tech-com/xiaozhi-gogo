@@ -3,3 +3,4 @@ logs
 build
 webui/dist
 dist
+.env

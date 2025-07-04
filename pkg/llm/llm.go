@@ -4,17 +4,15 @@ import (
 	"context"
 )
 
-type Role string
-
 const (
-	RoleUser      Role = "user"
-	RoleAssistant Role = "assistant"
-	RoleSystem    Role = "system"
-	RoleTool      Role = "tool"
+	RoleUser      string = "user"
+	RoleAssistant string = "assistant"
+	RoleSystem    string = "system"
+	RoleTool      string = "tool"
 )
 
 type Dialogue struct {
-	Role    Role   `json:"role"`
+	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
