@@ -11,3 +11,5 @@ type AsrService interface {
 	ResponseCh() chan *AsrResponse
 	Close() error
 }
+
+type AsrBuilder func() (AsrService, error)

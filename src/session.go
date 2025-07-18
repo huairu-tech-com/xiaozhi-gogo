@@ -1,12 +1,14 @@
-package hub
+package src
 
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/repo"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/types"
+	"github.com/huairu-tech-com/xiaozhi-gogo/utils"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/hertz-contrib/websocket"
@@ -38,18 +40,26 @@ type Session struct {
 	state *SessionState
 
 	// this is kinda unable to generalize TODO
-	asrSrv         asr.AsrService
+	asrBuilder    asr.AsrBuilder
+	asrSrv        asr.AsrService
+	asrResponseCh chan *asr.AsrResponse
+
 	audioProcessor *AudioProcessor
 	seqNo          int32
+
+	incomingAudio chan []byte // channel for incoming audio data
 
 	msgHandlers map[MessageType]ClientMessageHandler
 	ctx         context.Context
 	cancel      context.CancelFunc
 }
 
-func newSession(ctx context.Context) *Session {
+func newSession(ctx context.Context, asrBuilder asr.AsrBuilder) *Session {
 	s := &Session{
-		msgHandlers: make(map[MessageType]ClientMessageHandler),
+		asrBuilder:    asrBuilder,
+		asrResponseCh: make(chan *asr.AsrResponse, 100), // buffered channel for ASR responses
+		msgHandlers:   make(map[MessageType]ClientMessageHandler),
+		incomingAudio: make(chan []byte, 100), // buffered channel for incoming audio data
 	}
 
 	s.buildState(AudioModeNone)
@@ -67,7 +77,52 @@ func newSession(ctx context.Context) *Session {
 		panic(err)
 	}
 
+	go func() {
+		if err := s.doWork(); err != nil {
+			log.Error().Err(err).Msgf("Session work loop for device %s terminated: %v", s.deviceId, err)
+		}
+	}()
+
 	return s
+}
+
+func (s *Session) doWork() error {
+	for {
+		time.Sleep(3 * time.Millisecond) // avoid busy loop
+
+		select {
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		default:
+			if s.audioProcessor.IsEmpty() {
+				continue
+			}
+
+			if utils.IsNilInterface(s.asrSrv) {
+				var err error
+				s.asrSrv, err = s.asrBuilder()
+				if err != nil {
+					return err
+				}
+			}
+
+			pcm, seq, isLast, err := s.audioProcessor.PopPCMWithVoice()
+			if err != nil {
+				return err
+			}
+
+			if !isLast {
+				if err := s.asrSrv.SendAudio(pcm, seq, isLast, 50*time.Millisecond); err != nil {
+					return err
+				}
+			}
+
+			if isLast {
+				s.asrSrv.Close()
+				s.asrSrv = nil
+			}
+		}
+	}
 }
 
 func (s *Session) isValid() bool {
@@ -104,7 +159,7 @@ func (s *Session) loop() error {
 
 		var messagePayloadType MessageType = MessageTypeNone
 		if mt == websocket.TextMessage {
-			log.Debug().Msgf("Received text message from device %s: %s", s.deviceId, string(rawBytes))
+			log.Debug().Msgf("XZ -> Server[T] %s: %s", s.deviceId, string(rawBytes))
 
 			var meta *MetaMessage
 			meta, err = MessageFromBytes[MetaMessage](rawBytes)
@@ -117,7 +172,7 @@ func (s *Session) loop() error {
 		}
 
 		if mt == websocket.BinaryMessage {
-			log.Debug().Msgf("Received binary message from device %s len(message) is %d", s.deviceId, len(rawBytes))
+			log.Debug().Msgf("XZ -> Server[B] %s len(message) is %d", s.deviceId, len(rawBytes))
 
 			messagePayloadType = MessageTypeRawAudio
 		}

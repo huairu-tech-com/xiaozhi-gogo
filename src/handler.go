@@ -1,8 +1,7 @@
-package hub
+package src
 
 import (
 	"encoding/binary"
-	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
@@ -55,11 +54,16 @@ func (s *Session) handleListenStart(raw []byte) error {
 	if !s.isSessionIdMatch(msg.SessionId) {
 		return ErrSessionIdMismatch
 	}
+
 	if err := s.buildState(msg.Mode); err != nil {
 		return err
 	}
 
-	return nil
+	s.cmdAlert("status", "fffffff", string(EmotionHappy))
+
+	s.cmdSTT("foobar4")
+
+	return s.cmdEmotion(string(EmotionAngry))
 }
 
 func (s *Session) handleListenStop(raw []byte) error {
@@ -96,19 +100,7 @@ func (s *Session) handleAudio(opusData []byte) error {
 	}
 	bp3.Payload = opusData[4 : 4+bp3.PayloadSize]
 
-	s.audioProcessor.PushOpus(bp3.Payload)
-	for !s.audioProcessor.IsEmpty() {
-		audioFrame, seqNo, isLast, err := s.audioProcessor.PopPCMWithVoice()
-		if err != nil {
-			return err
-		}
-
-		if err := s.asrSrv.SendAudio(audioFrame, seqNo, isLast, 50*time.Millisecond); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return s.audioProcessor.PushOpus(bp3.Payload)
 }
 
 func (s *Session) handleAbort(raw []byte) error {

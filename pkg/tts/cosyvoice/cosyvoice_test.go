@@ -1,4 +1,4 @@
-package silicon
+package cosyvoice
 
 import (
 	"context"

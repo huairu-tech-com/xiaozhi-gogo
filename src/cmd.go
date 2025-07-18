@@ -1,4 +1,4 @@
-package hub
+package src
 
 import (
 	"encoding/json"
@@ -31,10 +31,43 @@ const (
 	EmotionConfused    = "confused"
 )
 
+var emotionEmoji = map[string]string{
+	"neutral":     "😐",
+	"happy":       "😊",
+	"laughing":    "😂",
+	"funny":       "🤡",
+	"sad":         "😢",
+	"angry":       "😠",
+	"crying":      "😭",
+	"loving":      "🥰",
+	"embarrassed": "😳",
+	"surprised":   "😮",
+	"shocked":     "😱",
+	"thinking":    "🤔",
+	"winking":     "😉",
+	"cool":        "😎",
+	"relaxed":     "😌",
+	"delicious":   "😋",
+	"kissy":       "😘",
+	"confident":   "😏",
+	"sleepy":      "😴",
+	"silly":       "🤪",
+	"confused":    "😕",
+}
+
+const (
+	CmdTypeTTS    string = "tts"
+	CmdTypeSTT    string = "stt"
+	CmdTypeLLM    string = "llm"
+	CmdTypeSystem string = "system"
+	CmdTypeAlert  string = "alert"
+)
+
 func (s *Session) cmdTTSStart() error {
 	jsonData := map[string]string{
-		"type":  "tts",
-		"state": "start",
+		"type":       CmdTypeTTS,
+		"state":      "start",
+		"session_id": s.sessionId,
 	}
 	log.Debug().Msgf("cmdTTSStart: %+v", jsonData)
 
@@ -49,8 +82,9 @@ func (s *Session) cmdTTSStart() error {
 
 func (s *Session) cmdTTSStop(raw []byte) error {
 	jsonData := map[string]string{
-		"type":  "tts",
-		"state": "stop",
+		"type":       CmdTypeTTS,
+		"state":      "stop",
+		"session_id": s.sessionId,
 	}
 	log.Debug().Msgf("cmdTTSStop: %+v", jsonData)
 
@@ -65,9 +99,10 @@ func (s *Session) cmdTTSStop(raw []byte) error {
 
 func (s *Session) cmdTTSSentenceStart(text string) error {
 	jsonData := map[string]string{
-		"type":  "tts",
-		"state": "sentence_start",
-		text:    text,
+		"type":       CmdTypeTTS,
+		"state":      "sentence_start",
+		"session_id": s.sessionId,
+		text:         text,
 	}
 	log.Debug().Msgf("cmdTTSSentenceStart: %+v", jsonData)
 
@@ -82,8 +117,9 @@ func (s *Session) cmdTTSSentenceStart(text string) error {
 
 func (s *Session) cmdSTT(text string) error {
 	jsonData := map[string]string{
-		"type": "tts",
-		text:   text,
+		"type":       CmdTypeSTT,
+		"session_id": s.sessionId,
+		text:         text,
 	}
 	log.Debug().Msgf("cmdSTT: %+v", jsonData)
 
@@ -98,8 +134,9 @@ func (s *Session) cmdSTT(text string) error {
 
 func (s *Session) cmdLLM(emotion string) error {
 	jsonData := map[string]string{
-		"type":    "tts",
-		"emotion": emotion,
+		"type":       CmdTypeLLM,
+		"session_id": s.sessionId,
+		"emotion":    emotion,
 	}
 	log.Debug().Msgf("cmdLLM: %+v", jsonData)
 
@@ -114,8 +151,9 @@ func (s *Session) cmdLLM(emotion string) error {
 
 func (s *Session) cmdSystem() error {
 	jsonData := map[string]string{
-		"type":    "system",
-		"command": "reboot",
+		"type":       CmdTypeSystem,
+		"command":    "reboot",
+		"session_id": s.sessionId,
 	}
 	log.Debug().Msgf("cmdSystem: %+v", jsonData)
 
@@ -130,12 +168,13 @@ func (s *Session) cmdSystem() error {
 
 func (s *Session) cmdAlert(status, message, emotion string) error {
 	jsonData := map[string]interface{}{
-		"type":    "alert",
-		"status":  status,
-		"message": message,
-		"emotion": emotion,
+		"type":       CmdTypeAlert,
+		"status":     status,
+		"message":    message,
+		"session_id": s.sessionId,
+		"emotion":    emotion,
 	}
-	log.Debug().Msgf("cmdTTSVolume: %+v", jsonData)
+	log.Debug().Msgf("cmdTTSAlert: %+v", jsonData)
 
 	w, err := s.conn.NextWriter(websocket.TextMessage)
 	if err != nil {
@@ -144,4 +183,8 @@ func (s *Session) cmdAlert(status, message, emotion string) error {
 
 	defer w.Close()
 	return json.NewEncoder(w).Encode(jsonData)
+}
+
+func (s *Session) cmdEmotion(emotion string) error {
+	return s.cmdLLM(emotion)
 }

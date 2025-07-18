@@ -135,7 +135,6 @@ var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoC
 		return nil, errors.Wrapf(err, "failed to dial websocket: %s", sb.String())
 	}
 
-	doubaoConn.respCh = make(chan *asr.AsrResponse, 10) // buffered channel for responses
 	doubaoConn.ttLogid = resp.Header.Get("X-Tt-Logid")
 	doubaoConn.ctx, doubaoConn.cancel = context.WithCancel(ctx)
 
@@ -151,6 +150,10 @@ var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoC
 	}()
 
 	return doubaoConn, err
+}
+
+func (conn *AsrDoubaoConn) SetResponCh(ch chan *asr.AsrResponse) {
+	conn.respCh = ch
 }
 
 func (conn *AsrDoubaoConn) String() string {

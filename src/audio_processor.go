@@ -1,4 +1,4 @@
-package hub
+package src
 
 import (
 	"fmt"
@@ -129,6 +129,9 @@ func (ab *AudioProcessor) PopPCMWithVoice() (bytes []byte, seq int, isLast bool,
 	if len(ab.frames) == 0 {
 		return nil, ab.seq, ab.longPausing, ErrNoAudioFrame
 	}
+
+	ab.lock.Lock()
+	defer ab.lock.Unlock()
 
 	firstFrame := ab.frames[0]
 	ab.frames = ab.frames[1:]

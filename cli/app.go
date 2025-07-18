@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/huairu-tech-com/xiaozhi-gogo/config"
-	"github.com/huairu-tech-com/xiaozhi-gogo/hub"
+	"github.com/huairu-tech-com/xiaozhi-gogo/src"
 	"github.com/huairu-tech-com/xiaozhi-gogo/webui"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -25,7 +25,7 @@ func runServers(ctx context.Context, cfg *config.Config) error {
 	hertzForDevice := server.Default(
 		server.WithHostPorts(cfg.Addr),
 	)
-	deviceHubSrv, err := hub.New(cfg.Ota, cfg.Asr)
+	deviceHubSrv, err := src.New(cfg.Ota, cfg.Asr)
 	if err != nil {
 		return err
 	}
