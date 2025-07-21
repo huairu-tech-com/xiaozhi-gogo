@@ -16,16 +16,22 @@ import (
 )
 
 type Hub struct {
-	cfgOta     *config.OtaConfig
-	cfgAsr     *config.AsrConfig // ASR configuration
+	cfgOta *config.OtaConfig
+	cfgAsr *config.AsrConfig // ASR configuration
+	cfgLlm *config.LlmConfig // LLM configuration, if needed
+
 	repo       repo.Respository
 	sessionMap *hashmap.Map[string, *Session]
 }
 
-func New(cfgOta *config.OtaConfig, cfgAsr *config.AsrConfig) (*Hub, error) {
+func New(cfgOta *config.OtaConfig,
+	cfgAsr *config.AsrConfig,
+	cfgLlm *config.LlmConfig,
+) (*Hub, error) {
 	h := &Hub{
 		cfgOta:     cfgOta,
 		cfgAsr:     cfgAsr,
+		cfgLlm:     cfgLlm,
 		repo:       repo.NewInMemoryRepository(),
 		sessionMap: hashmap.New[string, *Session](),
 	}

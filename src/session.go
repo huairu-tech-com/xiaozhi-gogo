@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr"
+	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/llm"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/repo"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/types"
 
@@ -41,6 +42,8 @@ type Session struct {
 	state *SessionState
 
 	audioProcessor *AudioProcessor
+
+	conversation *Conversation
 
 	msgHandlers map[MessageType]ClientMessageHandler
 	ctx         context.Context
@@ -96,16 +99,52 @@ func (s *Session) loop() error {
 	if err != nil {
 		return err
 	}
+	llmResponseCh := make(chan *llm.LLMResponse, 100) // buffered channel for LLM responses
+	s.conversation = NewConversation(s.ctx, s.hub.cfgLlm.Deepseek)
 
 	for {
 		select {
 		case <-s.ctx.Done():
 			return s.ctx.Err()
 		case r := <-asrResponseCh:
-			// if r.IsFinish {
 			fmt.Printf("ASR response received: %s", r.Text)
+			if r.IsFinish && len(r.Text) != 0 {
+				if err := s.cmdSTT(r.Text); err != nil {
+					log.Error().Err(err).Msgf("Failed to send STT command for device %s: %v", s.deviceId, err)
+					return err
+				}
 
-			// }
+				go func() {
+					resp, err := s.conversation.Ask(r.Text)
+					if err != nil {
+						log.Error().Err(err).Msgf("Failed to ask conversation for device %s: %v", s.deviceId, err)
+						llmResponseCh <- &llm.LLMResponse{
+							Question: r.Text,
+							Answer:   "",
+							Err:      err,
+						}
+						return
+					}
+
+					llmResponseCh <- &llm.LLMResponse{
+						Question: r.Text,
+						Answer:   resp,
+						Err:      nil,
+					}
+				}()
+
+				if err := s.cmdEmotion("thinking"); err != nil {
+					log.Error().Err(err).Msgf("Failed to send emotion command for device %s: %v", s.deviceId, err)
+					return err
+				}
+			}
+
+		case r := <-llmResponseCh:
+			fmt.Printf("LLM response received: %s", r.Answer)
+			if err := s.cmdTTSSentenceStart(r.Answer); err != nil {
+				return err
+			}
+
 		default:
 			s.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 50))
 			mt, rawBytes, err = s.conn.ReadMessage()

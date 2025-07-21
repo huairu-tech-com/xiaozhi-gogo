@@ -11,6 +11,12 @@ const (
 	RoleTool      string = "tool"
 )
 
+type LLMResponse struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+	Err      error  `json:"error,omitempty"`
+}
+
 type Dialogue struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -18,5 +24,4 @@ type Dialogue struct {
 
 type LLM interface {
 	Response(ctx context.Context, dialogues []Dialogue) (string, error)
-	ResponseStream(ctx context.Context, dialogues []Dialogue) (<-chan Dialogue, error)
 }

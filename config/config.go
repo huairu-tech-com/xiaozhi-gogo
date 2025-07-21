@@ -29,12 +29,23 @@ type AsrConfig struct {
 	Doubao *DoubalAsrConfig `yaml:"doubao"` // Doubao ASR configuration
 }
 
+type DeepseekConfig struct {
+	Model   string `yaml:"model"`    // DeepSeek model name, e.g., "deepseek-chat-3.5"
+	BaseUrl string `yaml:"base_url"` // Base URL for DeepSeek API, e.g., "https://api.deepseek.com/v1/chat/completions"
+	ApiKey  string `yaml:"api_key"`  // API key for DeepSeek, optional
+}
+
+type LlmConfig struct {
+	Deepseek *DeepseekConfig `yaml:"deepseek"` // DeepSeek LLM configuration
+}
+
 type Config struct {
 	Addr          string     `yaml:"addr"`        // endpoint of both WS and HTTP, publicly accessible
 	WebUIAddr     string     `yaml:"web_ui_addr"` // web UI address
 	Log           *LogConfig `yaml:"log"`         // log
 	Ota           *OtaConfig `yaml:"ota"`         // OTA configuration
 	Asr           *AsrConfig `yaml:"asr"`         // ASR configuration
+	Llm           *LlmConfig `yaml:"llm"`         // LLM configuration, if needed
 	EnableProfile bool       `yaml:"enable_profile"`
 }
 
@@ -48,6 +59,13 @@ func DefaultConfig() *Config {
 		},
 		Asr: &AsrConfig{
 			Doubao: &DoubalAsrConfig{},
+		},
+		Llm: &LlmConfig{
+			Deepseek: &DeepseekConfig{
+				BaseUrl: "https://api.deepseek.com/v1/chat/completions",
+				Model:   "deepseek-chat-3.5",
+				ApiKey:  "",
+			},
 		},
 		Ota: &OtaConfig{
 			WsEndpoint:      "ws://192.168.1.7:3457/xiaozhi/ws/",

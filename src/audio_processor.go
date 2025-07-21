@@ -199,7 +199,7 @@ func (ab *AudioProcessor) sendAudioToAsrService(audioFrame []byte, isLastFrame b
 	}
 
 	if isLastFrame {
-		time.Sleep(200 * time.Millisecond) // wait for ASR service to process the last frame
+		time.Sleep(400 * time.Millisecond) // wait for ASR service to process the last frame
 		ab.asrService.Close()
 		ab.asrService = nil
 	}

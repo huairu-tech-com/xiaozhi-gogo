@@ -7,52 +7,54 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type Emotion string
+
 const (
-	EmotionNeutral     = "neutral"
-	EmotionHappy       = "happy"
-	EmotionLaughing    = "laughing"
-	EmotionFunny       = "funny"
-	EmotionSad         = "sad"
-	EmotionAngry       = "angry"
-	EmotionCrying      = "crying"
-	EmotionLoving      = "loving"
-	EmotionEmbarrassed = "embarrassed"
-	EmotionSurprised   = "surprised"
-	EmotionShocked     = "shocked"
-	EmotionThinking    = "thinking"
-	EmotionWinking     = "winking"
-	EmotionCool        = "cool"
-	EmotionRelaxed     = "relaxed"
-	EmomtionDelicious  = "delicious"
-	EmotionKissy       = "kissy"
-	EmotionConfident   = "confident"
-	EmotionSleepy      = "sleepy"
-	EmotionSilly       = "silly"
-	EmotionConfused    = "confused"
+	EmotionNeutral     Emotion = "neutral"
+	EmotionHappy       Emotion = "happy"
+	EmotionLaughing    Emotion = "laughing"
+	EmotionFunny       Emotion = "funny"
+	EmotionSad         Emotion = "sad"
+	EmotionAngry       Emotion = "angry"
+	EmotionCrying      Emotion = "crying"
+	EmotionLoving      Emotion = "loving"
+	EmotionEmbarrassed Emotion = "embarrassed"
+	EmotionSurprised   Emotion = "surprised"
+	EmotionShocked     Emotion = "shocked"
+	EmotionThinking    Emotion = "thinking"
+	EmotionWinking     Emotion = "winking"
+	EmotionCool        Emotion = "cool"
+	EmotionRelaxed     Emotion = "relaxed"
+	EmomtionDelicious  Emotion = "delicious"
+	EmotionKissy       Emotion = "kissy"
+	EmotionConfident   Emotion = "confident"
+	EmotionSleepy      Emotion = "sleepy"
+	EmotionSilly       Emotion = "silly"
+	EmotionConfused    Emotion = "confused"
 )
 
-var emotionEmoji = map[string]string{
-	"neutral":     "😐",
-	"happy":       "😊",
-	"laughing":    "😂",
-	"funny":       "🤡",
-	"sad":         "😢",
-	"angry":       "😠",
-	"crying":      "😭",
-	"loving":      "🥰",
-	"embarrassed": "😳",
-	"surprised":   "😮",
-	"shocked":     "😱",
-	"thinking":    "🤔",
-	"winking":     "😉",
-	"cool":        "😎",
-	"relaxed":     "😌",
-	"delicious":   "😋",
-	"kissy":       "😘",
-	"confident":   "😏",
-	"sleepy":      "😴",
-	"silly":       "🤪",
-	"confused":    "😕",
+var emotionEmoji = map[Emotion]string{
+	EmotionNeutral:     "",
+	EmotionHappy:       "😊",
+	EmotionLaughing:    "😂",
+	EmotionFunny:       "🤡",
+	EmotionSad:         "😢",
+	EmotionAngry:       "😠",
+	EmotionCrying:      "😭",
+	EmotionLoving:      "🥰",
+	EmotionEmbarrassed: "😳",
+	EmotionShocked:     "😱",
+	EmotionSurprised:   "😮",
+	EmotionThinking:    "🤔",
+	EmotionWinking:     "😉",
+	EmotionCool:        "😎",
+	EmotionRelaxed:     "😌",
+	EmomtionDelicious:  "😋",
+	EmotionKissy:       "😘",
+	EmotionConfident:   "😏",
+	EmotionSleepy:      "😴",
+	EmotionSilly:       "🤪",
+	EmotionConfused:    "😕",
 }
 
 const (
@@ -102,7 +104,7 @@ func (s *Session) cmdTTSSentenceStart(text string) error {
 		"type":       CmdTypeTTS,
 		"state":      "sentence_start",
 		"session_id": s.sessionId,
-		text:         text,
+		"text":       text,
 	}
 	log.Debug().Msgf("cmdTTSSentenceStart: %+v", jsonData)
 
@@ -119,7 +121,7 @@ func (s *Session) cmdSTT(text string) error {
 	jsonData := map[string]string{
 		"type":       CmdTypeSTT,
 		"session_id": s.sessionId,
-		text:         text,
+		"text":       text,
 	}
 	log.Debug().Msgf("cmdSTT: %+v", jsonData)
 
