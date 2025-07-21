@@ -67,7 +67,7 @@ func (t *Tts) GenerateAudio(ctx context.Context, text string, speed float32) ([]
 		"input":           text,
 		"voice":           t.voice,
 		"response_format": "pcm",
-		"sample_rate":     44100,
+		"sample_rate":     16000,
 		"stream":          true,
 		"gain":            0.0,
 		"speed":           speed,

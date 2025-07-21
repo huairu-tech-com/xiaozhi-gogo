@@ -22,5 +22,4 @@ func BadRequest(ctx *app.RequestContext, message string) {
 func InternalServerError(ctx *app.RequestContext, message string) {
 	ctx.Header("Content-Type", "application/json")
 	ctx.JSON(http.StatusInternalServerError, map[string]string{"error": message})
-
 }

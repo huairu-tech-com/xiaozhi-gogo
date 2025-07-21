@@ -91,7 +91,7 @@ func (filter *vadAudioFilter) Feed(hasVoice bool, audioFrame []byte) []audio {
 	return nil
 }
 
-type AudioProcessor struct {
+type AsrProcessor struct {
 	ctx  context.Context
 	lock sync.Mutex
 	// a queue of audio frames
@@ -110,10 +110,10 @@ type AudioProcessor struct {
 	audioFilter *vadAudioFilter // filter for audio frames
 }
 
-func NewAudioProcessor(ctx context.Context,
+func NewAsrProcessor(ctx context.Context,
 	asrConfg *config.AsrConfig,
-	asrResponseCh chan<- *asr.AsrResponse) (*AudioProcessor, error) {
-	ab := &AudioProcessor{
+	asrResponseCh chan<- *asr.AsrResponse) (*AsrProcessor, error) {
+	ab := &AsrProcessor{
 		ctx:              ctx,
 		lock:             sync.Mutex{},
 		preFrameHasVoice: false,
@@ -143,7 +143,7 @@ func NewAudioProcessor(ctx context.Context,
 	return ab, nil
 }
 
-func (ab *AudioProcessor) PushOpus(opusBytes []byte) error {
+func (ab *AsrProcessor) Push(opusBytes []byte) error {
 	ab.lock.Lock()
 	defer ab.lock.Unlock()
 
@@ -179,7 +179,7 @@ func (ab *AudioProcessor) PushOpus(opusBytes []byte) error {
 	return nil
 }
 
-func (ab *AudioProcessor) sendAudioToAsrService(audioFrame []byte, isLastFrame bool) error {
+func (ab *AsrProcessor) sendAudioToAsrService(audioFrame []byte, isLastFrame bool) error {
 	if ab.asrService == nil {
 		var err error
 		doubaoConfig := doubao.DefaultConfig()
@@ -207,7 +207,7 @@ func (ab *AudioProcessor) sendAudioToAsrService(audioFrame []byte, isLastFrame b
 	return nil
 }
 
-func (ab *AudioProcessor) Close() {
+func (ab *AsrProcessor) Close() {
 	if ab.vadInst != nil {
 		webrtcvad.Free(ab.vadInst)
 	}

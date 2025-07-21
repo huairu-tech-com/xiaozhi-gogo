@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/llm"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/repo"
+	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/tts"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/types"
 
 	"github.com/go-playground/validator/v10"
@@ -41,9 +43,9 @@ type Session struct {
 
 	state *SessionState
 
-	audioProcessor *AudioProcessor
-
-	conversation *Conversation
+	asrProcessor *AsrProcessor
+	llmProcessor *LlmProcessor
+	ttsProcessor *TtsProcessor
 
 	msgHandlers map[MessageType]ClientMessageHandler
 	ctx         context.Context
@@ -94,20 +96,21 @@ func (s *Session) loop() error {
 		}
 	}()
 
-	asrResponseCh := make(chan *asr.AsrResponse, 100) // buffered channel for ASR responses
-	s.audioProcessor, err = NewAudioProcessor(s.ctx, s.hub.cfgAsr, asrResponseCh)
+	asrResponseCh := make(chan *asr.AsrResponse, 10) // buffered channel for ASR responses
+	s.asrProcessor, err = NewAsrProcessor(s.ctx, s.hub.cfgAsr, asrResponseCh)
 	if err != nil {
 		return err
 	}
-	llmResponseCh := make(chan *llm.LLMResponse, 100) // buffered channel for LLM responses
-	s.conversation = NewConversation(s.ctx, s.hub.cfgLlm.Deepseek)
+	llmResponseCh := make(chan *llm.LLMResponse, 10) // buffered channel for LLM responses
+	s.llmProcessor = NewLlmProcessor(s.ctx, s.hub.cfgLlm.Deepseek)
+	ttsResponseCh := make(chan *tts.TTSResponse, 10) // buffered channel for TTS responses
+	s.ttsProcessor = NewTtsProcessor(s.ctx, s.hub.cfgTts.CosyVoice)
 
 	for {
 		select {
 		case <-s.ctx.Done():
 			return s.ctx.Err()
 		case r := <-asrResponseCh:
-			fmt.Printf("ASR response received: %s", r.Text)
 			if r.IsFinish && len(r.Text) != 0 {
 				if err := s.cmdSTT(r.Text); err != nil {
 					log.Error().Err(err).Msgf("Failed to send STT command for device %s: %v", s.deviceId, err)
@@ -115,7 +118,7 @@ func (s *Session) loop() error {
 				}
 
 				go func() {
-					resp, err := s.conversation.Ask(r.Text)
+					resp, err := s.llmProcessor.Push(r.Text)
 					if err != nil {
 						log.Error().Err(err).Msgf("Failed to ask conversation for device %s: %v", s.deviceId, err)
 						llmResponseCh <- &llm.LLMResponse{
@@ -143,6 +146,64 @@ func (s *Session) loop() error {
 			fmt.Printf("LLM response received: %s", r.Answer)
 			if err := s.cmdTTSSentenceStart(r.Answer); err != nil {
 				return err
+			}
+
+			go func() {
+				resp, err := s.ttsProcessor.Push(r.Answer)
+				if err != nil {
+					ttsResponseCh <- &tts.TTSResponse{
+						Text:  r.Answer,
+						Audio: nil,
+						Err:   err,
+					}
+				}
+
+				opusData := make([]byte, 0)
+				for _, opus := range resp {
+					opusData = append(opusData, opus...)
+				}
+
+				os.WriteFile("/tmp/opus.opus", opusData, 0644)
+
+				for i, opus := range resp {
+					ttsResponseCh <- &tts.TTSResponse{
+						IsEnd:   i == len(resp)-1,
+						IsStart: i == 0,
+						Text:    r.Answer,
+						Audio:   opus,
+						Err:     nil,
+					}
+				}
+			}()
+
+		case r, ok := <-ttsResponseCh:
+			if !ok {
+				return nil
+			}
+
+			if r.Err != nil {
+				return fmt.Errorf("failed to process TTS response: %w", r.Err)
+			}
+
+			if r.IsStart {
+				if err := s.cmdTTSStart(); err != nil {
+					return err
+				}
+
+				if err := s.cmdEmotion("happy"); err != nil {
+					return err
+				}
+			}
+
+			println(len(r.Audio), r.IsEnd, r.Text)
+			if err := s.cmdAudio(r.Audio); err != nil {
+				return err
+			}
+
+			if r.IsEnd {
+				if err := s.cmdTTSStop(); err != nil {
+					return err
+				}
 			}
 
 		default:
@@ -246,8 +307,8 @@ func (s *Session) Close() {
 		s.conn.Close()
 	}
 
-	if s.audioProcessor != nil {
-		s.audioProcessor.Close()
+	if s.asrProcessor != nil {
+		s.asrProcessor.Close()
 	}
 }
 

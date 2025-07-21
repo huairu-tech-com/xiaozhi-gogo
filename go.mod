@@ -11,6 +11,7 @@ require (
 	github.com/go-yaml/yaml v2.1.0+incompatible
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/hertz-contrib/websocket v0.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/qrtc/opus-go v0.0.1

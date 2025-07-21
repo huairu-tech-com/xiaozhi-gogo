@@ -19,6 +19,7 @@ type Hub struct {
 	cfgOta *config.OtaConfig
 	cfgAsr *config.AsrConfig // ASR configuration
 	cfgLlm *config.LlmConfig // LLM configuration, if needed
+	cfgTts *config.TtsConfig // TTS configuration, if needed
 
 	repo       repo.Respository
 	sessionMap *hashmap.Map[string, *Session]
@@ -27,11 +28,13 @@ type Hub struct {
 func New(cfgOta *config.OtaConfig,
 	cfgAsr *config.AsrConfig,
 	cfgLlm *config.LlmConfig,
+	cfgTts *config.TtsConfig,
 ) (*Hub, error) {
 	h := &Hub{
 		cfgOta:     cfgOta,
 		cfgAsr:     cfgAsr,
 		cfgLlm:     cfgLlm,
+		cfgTts:     cfgTts,
 		repo:       repo.NewInMemoryRepository(),
 		sessionMap: hashmap.New[string, *Session](),
 	}

@@ -8,17 +8,17 @@ import (
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/llm/openai"
 )
 
-type Conversation struct {
+type LlmProcessor struct {
 	ctx       context.Context
 	dialogues []llm.Dialogue
 
 	llmSrv llm.LLM
 }
 
-func NewConversation(ctx context.Context,
+func NewLlmProcessor(ctx context.Context,
 	llmConfig *config.DeepseekConfig,
-) *Conversation {
-	c := &Conversation{
+) *LlmProcessor {
+	c := &LlmProcessor{
 		ctx:       ctx,
 		dialogues: make([]llm.Dialogue, 0),
 	}
@@ -31,7 +31,7 @@ func NewConversation(ctx context.Context,
 	return c
 }
 
-func (c *Conversation) Ask(question string) (string, error) {
+func (c *LlmProcessor) Push(question string) (string, error) {
 	dialogue := llm.Dialogue{
 		Role:    llm.RoleUser,
 		Content: question,

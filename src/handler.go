@@ -100,7 +100,7 @@ func (s *Session) handleAudio(opusData []byte) error {
 	}
 	bp3.Payload = opusData[4 : 4+bp3.PayloadSize]
 
-	return s.audioProcessor.PushOpus(bp3.Payload)
+	return s.asrProcessor.Push(bp3.Payload)
 }
 
 func (s *Session) handleAbort(raw []byte) error {

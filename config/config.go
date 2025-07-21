@@ -39,6 +39,16 @@ type LlmConfig struct {
 	Deepseek *DeepseekConfig `yaml:"deepseek"` // DeepSeek LLM configuration
 }
 
+type CosyVoiceConfig struct {
+	BaseUrl string `yaml:"base_url"` // Base URL for CosyVoice TTS API, e.g., "https://api.cosyvoice.com/v1/tts"
+	Voice   string `yaml:"voice"`    // Voice ID for CosyVoice TTS, e.g., "cosy-voice-1"
+	ApiKey  string `yaml:"api_key"`  // API key for CosyVoice TTS
+}
+
+type TtsConfig struct {
+	CosyVoice *CosyVoiceConfig `yaml:"cosy_voice"` // CosyVoice TTS configuration
+}
+
 type Config struct {
 	Addr          string     `yaml:"addr"`        // endpoint of both WS and HTTP, publicly accessible
 	WebUIAddr     string     `yaml:"web_ui_addr"` // web UI address
@@ -46,6 +56,7 @@ type Config struct {
 	Ota           *OtaConfig `yaml:"ota"`         // OTA configuration
 	Asr           *AsrConfig `yaml:"asr"`         // ASR configuration
 	Llm           *LlmConfig `yaml:"llm"`         // LLM configuration, if needed
+	Tts           *TtsConfig `yaml:"tts"`         // TTS configuration, if needed
 	EnableProfile bool       `yaml:"enable_profile"`
 }
 
@@ -64,6 +75,13 @@ func DefaultConfig() *Config {
 			Deepseek: &DeepseekConfig{
 				BaseUrl: "https://api.deepseek.com/v1/chat/completions",
 				Model:   "deepseek-chat-3.5",
+				ApiKey:  "",
+			},
+		},
+		Tts: &TtsConfig{
+			CosyVoice: &CosyVoiceConfig{
+				BaseUrl: "https://api.siliconflow.cn",
+				Voice:   "benjimin",
 				ApiKey:  "",
 			},
 		},

@@ -82,7 +82,7 @@ func (s *Session) cmdTTSStart() error {
 	return json.NewEncoder(w).Encode(jsonData)
 }
 
-func (s *Session) cmdTTSStop(raw []byte) error {
+func (s *Session) cmdTTSStop() error {
 	jsonData := map[string]string{
 		"type":       CmdTypeTTS,
 		"state":      "stop",
@@ -189,4 +189,15 @@ func (s *Session) cmdAlert(status, message, emotion string) error {
 
 func (s *Session) cmdEmotion(emotion string) error {
 	return s.cmdLLM(emotion)
+}
+
+func (s *Session) cmdAudio(audio []byte) error {
+	w, err := s.conn.NextWriter(websocket.BinaryMessage)
+	if err != nil {
+		return err
+	}
+
+	_, err = w.Write(audio)
+
+	return err
 }
