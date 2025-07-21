@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr"
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 )
 
 type Header struct {
@@ -95,13 +96,12 @@ type FullServerResponsePacketPayload struct {
 
 // https://www.volcengine.com/docs/6561/1354869
 type AsrDoubaoConn struct {
-	ctx       context.Context    // 上下文
-	cancel    context.CancelFunc // 上下文取消函数
+	ctx       context.Context // 上下文
 	conn      *websocket.Conn
 	connectId string // 客户端的 connect ID
 
-	ttLogid string                // 服务端的 trace ID
-	respCh  chan *asr.AsrResponse // 响应通道
+	ttLogid string                  // 服务端的 trace ID
+	respCh  chan<- *asr.AsrResponse // 响应通道
 }
 
 var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoConn, error) {
@@ -119,8 +119,10 @@ var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoC
 		TLSClientConfig:  &tls.Config{InsecureSkipVerify: false},
 	}
 
+	log.Info().Msgf("Dialing Doubao ASR service at %s with connectId: %s", DoubaoStreamAsrEndpoint, connectId)
 	conn, resp, err := dialer.DialContext(ctx, DoubaoStreamAsrEndpoint, headers)
 	doubaoConn := &AsrDoubaoConn{
+		ctx:       ctx,
 		conn:      conn,
 		connectId: connectId,
 	}
@@ -136,7 +138,6 @@ var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoC
 	}
 
 	doubaoConn.ttLogid = resp.Header.Get("X-Tt-Logid")
-	doubaoConn.ctx, doubaoConn.cancel = context.WithCancel(ctx)
 
 	if err := doubaoConn.sendParameters(); err != nil {
 		doubaoConn.Close()
@@ -145,6 +146,7 @@ var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoC
 
 	go func() {
 		if err := doubaoConn.readLoop(); err != nil {
+			log.Error().Err(err).Msg("AsrDoubaoConn read loop error")
 			doubaoConn.Close()
 		}
 	}()
@@ -152,7 +154,7 @@ var DefaultDialer = func(ctx context.Context, cfg *AsrDoubaoConfig) (*AsrDoubaoC
 	return doubaoConn, err
 }
 
-func (conn *AsrDoubaoConn) SetResponCh(ch chan *asr.AsrResponse) {
+func (conn *AsrDoubaoConn) SetResponseCh(ch chan<- *asr.AsrResponse) {
 	conn.respCh = ch
 }
 
@@ -169,17 +171,10 @@ func (conn *AsrDoubaoConn) String() string {
 }
 
 func (conn *AsrDoubaoConn) Close() error {
-	if conn.ctx.Err() != nil {
-		conn.cancel()
-	}
+	log.Info().Msgf("Closing AsrDoubaoConn: %s", conn.String())
 
 	if conn.conn != nil {
 		conn.conn.Close()
-	}
-
-	if conn.respCh != nil {
-		close(conn.respCh)
-		conn.respCh = nil
 	}
 
 	return nil
@@ -225,14 +220,14 @@ func (conn *AsrDoubaoConn) sendParameters() error {
 		return errors.New("message too short, expected at least 4 bytes")
 	}
 
-	if checkMessageType(bytes[1]) == ServerMessageTypeServerError {
+	if parseMessageType(bytes[1]) == ServerMessageTypeServerError {
 		_, err := conn.parseServerResponseError(bytes)
 		if err != nil {
 			return err
 		}
 	}
 
-	if checkMessageType(bytes[1]) == SeverMessageTypeFullServerResponse {
+	if parseMessageType(bytes[1]) == SeverMessageTypeFullServerResponse {
 		_, _, err := conn.parseFullServerResponse(bytes)
 		if err != nil {
 			return err
@@ -281,11 +276,10 @@ func (conn *AsrDoubaoConn) buildFullClientPacket() ([]byte, error) {
 	return packetBuffer.Bytes(), nil
 }
 
-func (conn *AsrDoubaoConn) buildAudioOnlyRequestPacket(audioData []byte, seq int, isLastFrame bool) ([]byte, error) {
+func (conn *AsrDoubaoConn) buildAudioOnlyRequestPacket(audioData []byte, isLastFrame bool) ([]byte, error) {
 	packetIndicator := NoSequence
 	if isLastFrame {
 		packetIndicator = NegSequence
-		seq = -seq
 	}
 	header := conn.buildHeader(MessageTypeAudioOnlyRequest,
 		byte(packetIndicator),
@@ -326,59 +320,74 @@ func (conn *AsrDoubaoConn) readLoop() error {
 				return errors.New("message too short, expected at least 4 bytes")
 			}
 
-			switch checkMessageType(bytes[1]) {
+			switch parseMessageType(bytes[1]) {
 			case SeverMessageTypeFullServerResponse:
-				_, payload, err := conn.parseFullServerResponse(bytes)
+				header, payload, err := conn.parseFullServerResponse(bytes)
 				if err != nil {
 					return err
 				}
+
 				if conn.respCh != nil {
 					conn.respCh <- &asr.AsrResponse{
-						Text: payload.Result.Text,
+						IsFinish: header.Flags&NegSequence != 0,
+						Success:  true,
+						Text:     payload.Result.Text,
+						Err:      nil,
 					}
 				}
 
 			case ServerMessageTypeServerError:
-				_, err := conn.parseServerResponseError(bytes)
-				if err != nil {
+				if _, err := conn.parseServerResponseError(bytes); err != nil {
+					if conn.respCh != nil {
+						conn.respCh <- &asr.AsrResponse{
+							IsFinish: true,
+							Success:  false,
+							Text:     "",
+							Err:      err,
+						}
+					}
+
 					return err
 				}
 
 			default:
-				return errors.Errorf("unknown message type: %d", bytes[0])
+				if conn.respCh != nil {
+					conn.respCh <- &asr.AsrResponse{
+						Success: false,
+						Text:    "",
+						Err:     errors.Errorf("unknown message type: %d", bytes[0]),
+					}
+				}
+
+				return err
 			}
 		}
 	}
 }
 
-func (conn *AsrDoubaoConn) ResponseCh() chan *asr.AsrResponse {
-	return conn.respCh
-}
-
-func (conn *AsrDoubaoConn) SendAudio(pcm []byte, seq int, isLast bool, timeout time.Duration) error {
+func (conn *AsrDoubaoConn) SendAudio(pcm []byte,
+	isLast bool,
+	timeout time.Duration) error {
 	var err error
 	var data []byte
 	err = conn.conn.SetWriteDeadline(time.Now().Add(timeout))
 	if err != nil {
-		conn.cancel()
 		return err
 	}
 
-	data, err = conn.buildAudioOnlyRequestPacket(pcm, seq, isLast)
+	data, err = conn.buildAudioOnlyRequestPacket(pcm, isLast)
 	if err != nil {
-		conn.cancel()
 		return err
 	}
 
 	if err := conn.conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
-		conn.cancel()
 		return err
 	}
 
 	return nil
 }
 
-func checkMessageType(mt byte) ServerMessageType {
+func parseMessageType(mt byte) ServerMessageType {
 	if mt>>4&0x0F == MessageTypeFullServerResponse {
 		return SeverMessageTypeFullServerResponse
 	}

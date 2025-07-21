@@ -3,13 +3,14 @@ package asr
 import "time"
 
 type AsrResponse struct {
-	Text string
+	IsFinish bool
+	Success  bool  // Indicates if the ASR request was successful
+	Err      error // Error message if the request failed
+	Text     string
 }
 
 type AsrService interface {
-	SendAudio(pcm []byte, seq int, isLastFrame bool, timeout time.Duration) error
-	ResponseCh() chan *AsrResponse
+	SendAudio(pcm []byte, isLastFrame bool, timeout time.Duration) error
+	SetResponseCh(chan<- *AsrResponse)
 	Close() error
 }
-
-type AsrBuilder func() (AsrService, error)

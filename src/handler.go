@@ -55,7 +55,7 @@ func (s *Session) handleListenStart(raw []byte) error {
 		return ErrSessionIdMismatch
 	}
 
-	if err := s.buildState(msg.Mode); err != nil {
+	if err := s.resetState(msg.Mode); err != nil {
 		return err
 	}
 

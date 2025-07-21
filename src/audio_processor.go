@@ -1,11 +1,15 @@
 package src
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/baabaaox/go-webrtcvad"
+	"github.com/huairu-tech-com/xiaozhi-gogo/config"
+	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr"
+	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr/doubao"
 	"github.com/pkg/errors"
 	opus "github.com/qrtc/opus-go"
 )
@@ -13,7 +17,8 @@ import (
 var (
 	SampleRate = 16000
 	BitRate    = 16
-	VadLen     = 320
+	// 20ms of audio at 16kHz is 320 bytes
+	VadBytesLen = 320
 )
 
 const MaxFrameLen = 100
@@ -24,28 +29,98 @@ var (
 	ErrAudioLenNotAlign = errors.New("audio length is not aligned with frame size")
 )
 
-type AudioProcessor struct {
-	lock                 sync.Mutex
-	frames               [][]byte
-	tempFrame            []byte
-	previousFrameActivte bool
-	seq                  int
-	longPausing          bool
-	lastVoiceDetectedAt  time.Time
-
-	vadPositiveOnly bool
-	vadInst         webrtcvad.VadInst
-	opusDecoder     *opus.OpusDecoder
+type audio struct {
+	hasVoice bool
+	frame    []byte
+	isLast   bool
 }
 
-func NewAudioProcessor(vadPositiveOnly bool) (*AudioProcessor, error) {
+type vadAudioFilter struct {
+	threshold int // threshold for voice activity detection
+	audios    []audio
+
+	consecutiveVoiceCount int  // count of consecutive frames with voice activity
+	preAudioHasVoice      bool // previous frame's voice activity status
+	inVoice               bool // whether currently in a voice segment
+}
+
+func NewVADAudioFilter(threshold int) *vadAudioFilter {
+	return &vadAudioFilter{
+		threshold: threshold,
+		audios:    make([]audio, 0),
+
+		consecutiveVoiceCount: 0,
+		preAudioHasVoice:      false,
+	}
+}
+
+func (filter *vadAudioFilter) Feed(hasVoice bool, audioFrame []byte) []audio {
+	a := audio{
+		hasVoice: hasVoice,
+		frame:    audioFrame,
+		isLast:   filter.preAudioHasVoice && !hasVoice,
+	}
+
+	// this is the first frame
+	if !filter.preAudioHasVoice && hasVoice {
+		filter.audios = make([]audio, 0)
+		filter.audios = append(filter.audios, a)
+		filter.consecutiveVoiceCount = 1
+	}
+
+	if filter.preAudioHasVoice && hasVoice {
+		filter.audios = append(filter.audios, a)
+		filter.consecutiveVoiceCount += 1
+	}
+
+	if filter.preAudioHasVoice && !hasVoice {
+		if filter.consecutiveVoiceCount < filter.threshold {
+			filter.audios = make([]audio, 0)
+		} else {
+			filter.audios = append(filter.audios, a)
+		}
+	}
+
+	filter.preAudioHasVoice = hasVoice
+	if filter.consecutiveVoiceCount >= filter.threshold {
+		audios := filter.audios
+		filter.audios = make([]audio, 0)
+		return audios
+	}
+
+	return nil
+}
+
+type AudioProcessor struct {
+	ctx  context.Context
+	lock sync.Mutex
+	// a queue of audio frames
+
+	asrResponseCh chan<- *asr.AsrResponse
+
+	preFrameHasVoice bool
+	prevFrame        []byte // previous audio frame for VAD processing
+
+	vadInst     webrtcvad.VadInst
+	opusDecoder *opus.OpusDecoder
+
+	asrService asr.AsrService // ASR service for processing audio frames
+	asrConfig  *config.AsrConfig
+
+	audioFilter *vadAudioFilter // filter for audio frames
+}
+
+func NewAudioProcessor(ctx context.Context,
+	asrConfg *config.AsrConfig,
+	asrResponseCh chan<- *asr.AsrResponse) (*AudioProcessor, error) {
 	ab := &AudioProcessor{
-		frames:               make([][]byte, 0),
-		tempFrame:            make([]byte, 0),
-		previousFrameActivte: false,
-		lock:                 sync.Mutex{},
-		vadPositiveOnly:      vadPositiveOnly,
-		lastVoiceDetectedAt:  time.Now().Add(time.Hour * 1000),
+		ctx:              ctx,
+		lock:             sync.Mutex{},
+		preFrameHasVoice: false,
+
+		asrConfig:     asrConfg,
+		asrResponseCh: asrResponseCh,
+		audioFilter:   NewVADAudioFilter(3),
 	}
 
 	var err error
@@ -68,96 +143,68 @@ func NewAudioProcessor(vadPositiveOnly bool) (*AudioProcessor, error) {
 	return ab, nil
 }
 
-func (ab *AudioProcessor) PushOpus(bytes []byte) error {
+func (ab *AudioProcessor) PushOpus(opusBytes []byte) error {
 	ab.lock.Lock()
 	defer ab.lock.Unlock()
 
-	outbuf := make([]byte, 4096)
-	n, err := ab.opusDecoder.Decode(bytes, outbuf)
+	pcmBytes := make([]byte, 4096)
+	n, err := ab.opusDecoder.Decode(opusBytes, pcmBytes)
 	if err != nil {
 		return err
 	}
 
+	// 120ms of audio at 16kHz is 1920 bytes
 	if n != 1920 {
 		panic(fmt.Sprintf("opus decode error, expected 1920 bytes, got %d bytes", n))
 	}
 
-	vadPositiveCount := 0
-	for i := 0; i < n; i += VadLen {
-		chunkActive, err := webrtcvad.Process(ab.vadInst, SampleRate, outbuf[i:i+VadLen], VadLen)
+	vadPositiveCountInFrame := 0
+	for i := 0; i < n; i += VadBytesLen {
+		chunkActive, err := webrtcvad.Process(ab.vadInst, SampleRate, pcmBytes[i:i+VadBytesLen], VadBytesLen)
 		if err != nil {
 			return err
 		}
 
 		if chunkActive {
-			vadPositiveCount += 1
+			vadPositiveCountInFrame += 1
 		}
 	}
 
-	if vadPositiveCount > 3 {
-		if !ab.previousFrameActivte {
-			ab.seq += 1
-			ab.frames = append(ab.frames, ab.tempFrame)
+	for _, v := range ab.audioFilter.Feed(vadPositiveCountInFrame > 3, pcmBytes[:n]) {
+		if err := ab.sendAudioToAsrService(v.frame, v.isLast); err != nil {
+			return errors.Wrap(err, "send audio to ASR service failed")
 		}
-
-		ab.seq += 1
-		ab.longPausing = false
-		ab.frames = append(ab.frames, outbuf[:n])
-		ab.lastVoiceDetectedAt = time.Now()
-	}
-
-	ab.previousFrameActivte = vadPositiveCount > 3
-	ab.tempFrame = make([]byte, 0, n)
-	copy(ab.tempFrame[:], outbuf[:n])
-
-	// detect long pause in conversation state
-	if !ab.longPausing && ab.detectLongPause() {
-		ab.seq = 0
-		ab.longPausing = true
-		ab.frames = append(ab.frames, ab.tempFrame) // mark the end of a conversation
 	}
 
 	return nil
 }
 
-// marks the end of a conversation
-func (ab *AudioProcessor) detectLongPause() bool {
-	return time.Now().After(ab.lastVoiceDetectedAt.Add(2 * time.Second))
-}
+func (ab *AudioProcessor) sendAudioToAsrService(audioFrame []byte, isLastFrame bool) error {
+	if ab.asrService == nil {
+		var err error
+		doubaoConfig := doubao.DefaultConfig()
+		doubaoConfig.ApiKey = ab.asrConfig.Doubao.ApiKey
+		doubaoConfig.AccessKey = ab.asrConfig.Doubao.AccessKey
 
-func (ab *AudioProcessor) PopPCMWithVoice() (bytes []byte, seq int, isLast bool, err error) {
-	if len(ab.frames) == 0 {
-		return nil, ab.seq, ab.longPausing, ErrNoAudioFrame
+		ab.asrService, err = doubao.DefaultDialer(ab.ctx, doubaoConfig)
+		if err != nil {
+			return err
+		}
+
+		ab.asrService.SetResponseCh(ab.asrResponseCh)
 	}
 
-	ab.lock.Lock()
-	defer ab.lock.Unlock()
+	if err := ab.asrService.SendAudio(audioFrame, isLastFrame, time.Second); err != nil {
+		return err
+	}
 
-	firstFrame := ab.frames[0]
-	ab.frames = ab.frames[1:]
+	if isLastFrame {
+		time.Sleep(200 * time.Millisecond) // wait for ASR service to process the last frame
+		ab.asrService.Close()
+		ab.asrService = nil
+	}
 
-	return firstFrame, ab.seq, ab.longPausing, nil
-}
-
-func (ab *AudioProcessor) IsEmpty() bool {
-	ab.lock.Lock()
-	defer ab.lock.Unlock()
-
-	return len(ab.frames) == 0
-}
-
-func (ab *AudioProcessor) Size() int {
-	ab.lock.Lock()
-	defer ab.lock.Unlock()
-
-	return len(ab.frames)
-}
-
-func (ab *AudioProcessor) Clear() {
-	ab.lock.Lock()
-	defer ab.lock.Unlock()
-
-	ab.frames = make([][]byte, 0)
+	return nil
 }
 
 func (ab *AudioProcessor) Close() {

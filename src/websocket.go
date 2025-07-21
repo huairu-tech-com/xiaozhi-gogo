@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr"
-	"github.com/huairu-tech-com/xiaozhi-gogo/pkg/asr/doubao"
 	"github.com/huairu-tech-com/xiaozhi-gogo/utils"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -27,22 +25,11 @@ func wsHandler(h *Hub) app.HandlerFunc {
 
 func wsProtocolHandler(ctx context.Context, rctx *app.RequestContext, h *Hub) websocket.HertzHandler {
 	return func(conn *websocket.Conn) {
-		asrBuilder := func() (asr.AsrService, error) {
-			asrConfig := doubao.DefaultConfig()
-			asrConfig.ApiKey = h.cfgAsr.Doubao.ApiKey
-			asrConfig.AccessKey = h.cfgAsr.Doubao.AccessKey
-			return doubao.DefaultDialer(ctx, asrConfig)
-		}
-
-		s := newSession(ctx, asrBuilder)
+		s := newSession(ctx)
 
 		defer func() {
 			h.sessionMap.Del(rctx.Request.Header.Get("Device-Id"))
-			if !utils.IsNilInterface(s.asrSrv) {
-				s.asrSrv.Close()
-			}
 			conn.Close()
-			s.Close()
 		}()
 
 		s.hub = h
